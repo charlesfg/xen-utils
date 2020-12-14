@@ -11,5 +11,5 @@ all: km_xen_ver.c
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean 
 
-run:
+run: all
 	dmesg -C && insmod km_xen_ver.ko && rmmod km_xen_ver && dmesg

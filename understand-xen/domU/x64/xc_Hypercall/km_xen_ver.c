@@ -1,16 +1,23 @@
+/* Linux Kernel Includes */
 #include <linux/module.h>
-#include <net/sock.h>
-#include <linux/netlink.h>
-#include <linux/skbuff.h>
-#include <linux/kthread.h>
-#include <linux/sched.h>  
+#include <linux/kernel.h>
+
+/* Xen  Includes */
+/* Xen header files */                                                                             
+#include <linux/slab.h>
+#include <asm/xen/page.h>
+#include <asm/xen/hypervisor.h>
+#include <asm/xen/hypercall.h>
+#include <xen/interface/event_channel.h>
+
 
 static int __init hc_xen_ver_init(void) {
 
+	unsigned long ret = 0;
     printk("Loading the hc_xen_ver : %s\n",__FUNCTION__);
     printk("Entering: %s\n",__FUNCTION__);
-
-     /* wait for message coming down from user-space */    
+	ret = HYPERVISOR_xen_version(0, 0);
+    printk("Xen version %ld.%ld\n", ret >> 16, ret & 0xffff);
 
     return 0;
 }
