@@ -1,4 +1,4 @@
-MOD=km_xen_ver_2
+MOD=km_xen_ver_XXX
 obj-m:=$(MOD).o
 KDIR:=/lib/modules/$(shell uname -r)/build
 PWD:=$(shell pwd)
@@ -6,7 +6,7 @@ ccflags-y:= -O2 -Wno-declaration-after-statement
 
 .PHONY: clean run clear
 
-all: km_xen_ver_2.c
+all: km_xen_ver_XXX.c
 	$(MAKE) $(CFLAGS) -C $(KDIR) M=$(PWD) modules -lxenctrl
 	
 clean:
