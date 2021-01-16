@@ -4,11 +4,7 @@
 
 /* Xen  Includes */
 /* Xen header files */                                                                             
-#include <linux/slab.h>
-#include <asm/xen/page.h>
-#include <asm/xen/hypervisor.h>
 #include <asm/xen/hypercall.h>
-#include <xen/interface/event_channel.h>
 
 
 static int __init hc_xen_ver_init(void) {
