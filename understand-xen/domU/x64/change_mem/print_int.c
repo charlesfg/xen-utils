@@ -5,10 +5,11 @@
 
 
 
-void main()
+int  main()
 {
     int i = 18012016;
-    printf("var %d\t va %p\n", i, &i);
+    int pid = getpid();
+    printf("pid %d\tvar %d\t va %p\n",pid, i, &i);
     for(;;)
     {
         char input = getchar();
@@ -16,9 +17,9 @@ void main()
         {
             case 'q':
                 printf("Quiting... \n");
-                return;
+                return 0;
             default:
-                printf("var %d\t va %p\n", i, &i);
+                printf("pid %d\tvar %d\t va %p\n",pid, i, &i);
 
         }
             
