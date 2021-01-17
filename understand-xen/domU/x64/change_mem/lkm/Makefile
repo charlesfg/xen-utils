@@ -15,8 +15,8 @@ run: all
 	dmesg -C && insmod print_mem.ko && rmmod print_mem && dmesg
 
 load: all
-	dmesg -C && insmod print_mem.ko 300 && dmesg -E
+	dmesg -C && insmod print_mem.ko ms_sleep=3000 && dmesg -E
  
 unload: all
-	dmesg -C && dmesg -D
+	rmmod print_mem && dmesg -D
   
