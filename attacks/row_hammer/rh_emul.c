@@ -461,12 +461,22 @@ void print_kmemory_info(void * ret){
      */
     printk("Address of __pa(ret) \t\t%p\n",(void *) __pa(&ret));
     printk("Address of virt_to_phys(ret) \t\t%p\n",(void*) virt_to_phys(&ret));
-    printk("PAGE_OFFSET \t%lX\n", PAGE_OFFSET);
     printk("virt_addr_valid(ret) \t%d\n", virt_addr_valid(&ret));
     printk("Address of virt_to_page(ret) \t%p\n", virt_to_page(&ret));
     printk("\n\n");
 }
 
+
+/* Set the pte_t that has the same offset that va to the new value */
+void update_va_pte_in_shadow(unsigned long shadow_va_page, unsigned long va, pte_t *npte)
+{
+    unsigned long offset = va & ~PAGE_MASK;
+    DEBUG("Page offset from va: %p, 0x%lx", (void *) va, offset);
+    pte_t *ptr = (pte_t *) shadow_va_page;
+    DEBUG("Previous pte 0x%lx\n", ptr[pte_index(va)].pte);
+    ptr[pte_index(va)] = *npte;
+    DEBUG("New  pte 0x%lx\n", ptr[pte_index(va)].pte);
+}
 
 unsigned int * value_from_shadow(unsigned long shadow_va_page, unsigned long va)
 {
@@ -520,6 +530,7 @@ static int __init rh_emul_init(void) {
 
     DEBUG("pgd addres %p", my_pgd);
     DEBUG("PAGE_SHIFT %d", PAGE_SHIFT);
+    DEBUG("PAGE_OFFSET \t%lX", PAGE_OFFSET);
     DEBUG("PAGE_SIZE %lx", PAGE_SIZE);
     DEBUG("PAGE_MASK %lx", PAGE_MASK);
     DEBUG("Page Walk of va %d - %p", *(int *)va, (void *) va);
@@ -545,7 +556,7 @@ static int __init rh_emul_init(void) {
     printk("0x%lx : (addr) %p -(pte) 0x%lx\n",pte_index(va), &ptr[pte_index(va)], 
             ptr[pte_index(va)].pte);
 
-
+    /*
     DEBUG("my_var %d",my_var);
     my_var = 30071980;
     DEBUG("my_var %d",my_var);
@@ -554,10 +565,19 @@ static int __init rh_emul_init(void) {
     DEBUG("Print va value from shadow_va_page: %d ", new_val);
     set_value_from_shadow(shadow_va_page, va, 23071987);
     DEBUG("my_var %d",my_var);
+    */
+
+
+    STEP("3: create fake pte_t in the the L1 shadow_va_page");
+    pte_t fake_pte;
+    fake_pte.pte = 0x509a00200;
+    update_va_pte_in_shadow(shadow_va_page, va, &fake_pte);
 
 
 
-    STEP("3: copy the L1 from va to the shadow_va_page");
+    STEP("4: Forge the row hammer Flip bit replacing the page");
+
+
 /*
     for(i=0; i < 512; i++){
         printk("%d : %p, 0x%lx",i,ptr, ptr->pte);
