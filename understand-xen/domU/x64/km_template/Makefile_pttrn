@@ -13,7 +13,7 @@ clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean 
 
 clear:
-	dmesg -C && insmod $(MOD).ko clear=1 && rmmod $(MOD) && dmesg
+	insmod $(MOD).ko clear=1 && rmmod $(MOD) && dmesg
 
 run: all
 	dmesg -C && insmod $(MOD).ko && rmmod $(MOD) && dmesg
