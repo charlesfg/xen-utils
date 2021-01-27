@@ -11,10 +11,19 @@
 #include <linux/kthread.h>
 #include <linux/sched.h>  
 #include <linux/delay.h>
+ 
+#include <linux/slab.h>
+#include <asm/xen/page.h>
+#include <asm/xen/hypervisor.h>
+#include <asm/xen/hypercall.h>
+#include <xen/interface/event_channel.h>
+#include <xen/xen.h>
+#include <xen/interface/xen.h>
 
 static int keepRunning = 1;
 static unsigned long int ret = 0;
 
+struct task_struct *task;
 
 static int ms_sleep = 500;
 module_param(ms_sleep, int, 0);

