@@ -3,7 +3,7 @@
   "directory": "/usr/src/linux-headers-3.13.0-170-generic", 
   "arguments": [
    "gcc", 
-   "-Wp,-MD,/root/xen-utils/attacks/xsa148_exploit/.xen_exploit.mod.o.d", 
+   "-Wp,-MD,/root/xen-utils/understand-xen/domU/x64/change_mem/lkm/.print_mem.mod.o.d", 
    "-nostdinc", 
    "-isystem", 
    "/usr/lib/gcc/x86_64-linux-gnu/5/include", 
@@ -75,14 +75,14 @@
    "-O2", 
    "-Wno-declaration-after-statement", 
    "-DKBUILD_STR(s)=#s", 
-   "-DKBUILD_BASENAME=KBUILD_STR(xen_exploit.mod)", 
-   "-DKBUILD_MODNAME=KBUILD_STR(xen_exploit)", 
+   "-DKBUILD_BASENAME=KBUILD_STR(print_mem.mod)", 
+   "-DKBUILD_MODNAME=KBUILD_STR(print_mem)", 
    "-DMODULE", 
    "-c", 
    "-o", 
-   "/root/xen-utils/attacks/xsa148_exploit/xen_exploit.mod.o",
-   "/root/xen-utils/attacks/xsa148_exploit/xen_exploit.mod.c"
+   "/root/xen-utils/understand-xen/domU/x64/change_mem/lkm/print_mem.mod.o", 
+   "/root/xen-utils/understand-xen/domU/x64/change_mem/lkm/print_mem.mod.c"
   ], 
-
-  "file": "/root/xen-utils/attacks/xsa148_exploit/xen_exploit.c" }
+  "file": "/root/xen-utils/understand-xen/domU/x64/change_mem/lkm/print_mem.mod.c"
+ }
 ]

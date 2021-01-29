@@ -1,0 +1,5 @@
+*-safe
+change_mem
+print_int
+print_phys
+virt_to_phys_user

@@ -1,21 +1,17 @@
-MOD=km_xen_ver_5
-obj-m:=$(MOD).o
+obj-m:=rh_emul_1.o
 KDIR:=/lib/modules/$(shell uname -r)/build
 PWD:=$(shell pwd)
 ccflags-y:= -O2 -Wno-declaration-after-statement
 
-.PHONY: clean run clear
+.PHONY: clean run
 
-all: km_xen_ver_5.c
+all: rh_emul.c
 	$(MAKE) $(CFLAGS) -C $(KDIR) M=$(PWD) modules -lxenctrl
 	
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean 
 
-clear:
-	insmod $(MOD).ko clear=1 && rmmod $(MOD) && dmesg
-
 run: all
-	dmesg -C && insmod $(MOD).ko && rmmod $(MOD) && dmesg
+	dmesg -C && insmod rh_emul_1.ko && rmmod rh_emul_1 && dmesg
  
   
