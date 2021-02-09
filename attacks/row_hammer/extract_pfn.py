@@ -154,6 +154,7 @@ class PageMapHandler:
 
 
 if __name__ == '__main__':
+
     if os.geteuid() != 0:
         exit("You need to have root privileges to run this script.\n"
              "Please try again, this time using 'sudo'. Exiting.")
@@ -161,10 +162,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Script to get a physical page address given a pid and a specification\n'
                     'Must be root to run this p')
-    parser.add_argument('--pid', '-p', metavar='pid', type=int, help='Pid of the Process')
-    parser.add_argument('--area', '-a', metavar='address_area', type=str, choices=('stack', 'heap', 'vdso'),
+    parser.add_argument('--pid', '-p', metavar='pid', type=int, required=True, help='Pid of the Process')
+    parser.add_argument('--area', '-a', metavar='address_area', type=str, required=True, choices=('stack', 'heap', 'vdso'),
                         help='Area from possible addresses to obtain, one of: %(choices)s', )
-    parser.add_argument('--order','-o', metavar='page-order', type=str, choices=('first', 'last', 'random'),
+    parser.add_argument('--order','-o', metavar='page-order', type=str, choices=('first', 'last', 'random'), default='first',
                         help='The order of the page to return, one of: %(choices)s')
     parser.add_argument('--debug', '-d', action='store_true', required=False, default=False,
                         help='Enable printing debug messages')
