@@ -103,7 +103,7 @@ char * get_pagetype_str(unsigned long pagetype)
             sprintf(ret, "pagetype 0x%lu - invalid XTAB", type_masked);
             break;
         default:
-            sprintf(ret, " <?invalid type?>");
+            sprintf(ret, " <?invalid type?> ");
             break;
     }
     return ret;
