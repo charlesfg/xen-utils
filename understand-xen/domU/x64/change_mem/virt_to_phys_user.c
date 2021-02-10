@@ -44,6 +44,7 @@ int pagemap_get_entry(PagemapEntry *entry, int pagemap_fd, uintptr_t vaddr)
     entry->present = (data >> 63) & 1;
     return 0;
 }
+#define ERROR(x, a...) fprintf(stderr, x "\n", ## a);
 
 /* Convert the given virtual address to physical using /proc/PID/pagemap.
  *
@@ -60,6 +61,7 @@ int virt_to_phys_user(uintptr_t *paddr, pid_t pid, uintptr_t vaddr)
     snprintf(pagemap_file, sizeof(pagemap_file), "/proc/%ju/pagemap", (uintmax_t)pid);
     pagemap_fd = open(pagemap_file, O_RDONLY);
     if (pagemap_fd < 0) {
+        ERROR("Could not open the pagemap for pid %ju", (uintmax_t)pid);
         return 1;
     }
     PagemapEntry entry;
@@ -86,6 +88,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "error: virt_to_phys_user\n");
         return EXIT_FAILURE;
     };
+    printf("Remeber this is pfn in in XEN PV modei\n");
     printf("0x%jx\n", (uintmax_t)paddr);
     return EXIT_SUCCESS;
 }
