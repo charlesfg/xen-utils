@@ -1,0 +1,32 @@
+[
+ {
+  "directory": "/var/xen-dev/xen-utils/understand-xen/dom0/change_mem", 
+  "arguments": [
+   "/usr/bin/gcc", 
+   "-I/var/xen-dev/xen/tools/libxc", 
+   "-I/var/xen-dev/xen/tools/include", 
+   "-Wall", 
+   "-O2", 
+   "-c", 
+   "change_mem.c", 
+   "-o", 
+   "change_mem.o"
+  ], 
+  "file": "change_mem.c"
+ }, 
+ {
+  "directory": "/var/xen-dev/xen-utils/attacks/vm2handler", 
+  "arguments": [
+   "/usr/bin/gcc", 
+   "-I/var/xen-dev/xen/tools/libxc", 
+   "-I/var/xen-dev/xen/tools/include", 
+   "-Wall", 
+   "-O2", 
+   "-c", 
+   "page_exploiter.c", 
+   "-o", 
+   "page_exploiter.o"
+  ], 
+  "file": "page_exploiter.c"
+ }
+]
