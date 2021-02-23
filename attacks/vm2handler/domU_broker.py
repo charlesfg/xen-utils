@@ -70,7 +70,7 @@ if __name__ == '__main__':
         logger.error("!! {}".format(traceback.format_exc()))
         exit(1)
 
-    cmd = "python3 page_selector.py --pid {} --area {} --order {}".format(pid, args.area, args.order)
+    cmd = "python3 page_selector.py --pid {} --region {} --order {}".format(pid, args.area, args.order)
     logger.info("Will invoke the command:\n{}".format(cmd))
     try:
         gpfn = run_cmd(cmd)

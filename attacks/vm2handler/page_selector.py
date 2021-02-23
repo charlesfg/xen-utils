@@ -169,7 +169,7 @@ if __name__ == '__main__':
                     'given a pid and a specification\n'
                     'Must be root to run this p')
     parser.add_argument('--pid', '-p', metavar='pid', type=int, required=True, help='Pid of the Process')
-    parser.add_argument('--area', '-a', metavar='address_area', type=str, choices=('stack', 'heap', 'vdso', 'vvar'),
+    parser.add_argument('--region', '-r', metavar='memory_regions', type=str, choices=('stack', 'heap', 'vdso', 'vvar'),
                         required=True, help='Area from possible addresses to obtain, one of: %(choices)s', )
     parser.add_argument('--order','-o', metavar='page-order', type=str, choices=('first', 'last', 'random'), default='first',
                         help='The order of the page to return, one of: %(choices)s')
