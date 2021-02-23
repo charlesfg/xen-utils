@@ -21,7 +21,7 @@ import logging
 import subprocess
 import traceback
 
-from utils.bash_utils import run_cmd
+from utils.bash_utils import run_cmd, execute_or_abort
 from utils.log_util import ScriptLogger
 
 logger = None  # type: logging.Logger
@@ -77,38 +77,24 @@ if __name__ == '__main__':
     logger.debug("Starting vm2handler with: {}".format(args))
 
     logger.info("Collect host information {}".format(args.host))
-
     try:
         host = get_host_information(args.host)
         logger.info("Host information {}".format(host))
     except subprocess.CalledProcessError as e:
         logger.error("The host Specified is not valid\n:{}".format(e))
+        logger.error("\n\tError Output:\n{}\n".format(e.output))
         logger.error("!! {}".format(traceback.format_exc()))
         exit(1)
 
     logger.info("Get GPFN from target host")
     cmd = "ssh {} 'cd vm2handler && python3 domU_broker.py --script {} --region {} " \
           "--order {}'".format(host["hostname"], args.script, args.region, args.order)
-    logger.info("Will invoke the command:\n{}".format(cmd))
-    try:
-        gpfn = run_cmd(cmd)
-    except subprocess.CalledProcessError as e:
-        logger.error("Could not acquire the gpfn\n:{}".format(e))
-        logger.error("output:\n{}".format(e.output))
-        logger.error("!! {}".format(traceback.format_exc()))
-        exit(1)
 
+    gpfn = execute_or_abort(cmd, "Could not acquire the gpfn", log=logger)
     logger.info("Returned GPFN {}".format(gpfn))
 
     cmd = "cd dom0 && ./page_exploiter -d {} -a {} -H {} {}".format(host["id"], args.action, args.hex, gpfn)
-
-    logger.info("Will exploit the page with:\n{}".format(cmd))
-    try:
-        output = run_cmd(cmd)
-    except subprocess.CalledProcessError as e:
-        logger.error("Could not exploit page \n:{}".format(e))
-        logger.error("!! {}".format(traceback.format_exc()))
-        exit(1)
+    output = execute_or_abort(cmd, "Could not exploit page",cmd_msg="Will exploit the page with",log=logger)
 
     logger.info("Output of the page exploiter: \n{}\n".format(output))
     logger.info("Exploit done!!")

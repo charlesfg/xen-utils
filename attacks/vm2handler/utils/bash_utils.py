@@ -1,10 +1,14 @@
+import traceback
 from time import sleep
 
 import subprocess
+import logging
 
 import re
 
 import sys
+
+__null_logger = logging.getLogger("dummy_null_logger")
 
 
 def linux_which(cmd):
@@ -53,6 +57,20 @@ def wait_and_check(cond, tries, t_sleep, use_inverse=False):
             count += 1
         if count >= tries:
             return False
+
+
+def execute_or_abort(cmd, err_msg, cmd_msg=None, log=None):
+    logger = log or __null_logger
+    msg = cmd_msg or "Will invoke the command:"
+    logger.info("{}\n{}".format(msg, cmd))
+    try:
+        output = run_cmd(cmd)
+    except subprocess.CalledProcessError as e:
+        logger.error("{}\n:{}".format(err_msg, e))
+        logger.error("\n\tError Output:\n{}\n".format(e.output))
+        logger.error("!! {}".format(traceback.format_exc()))
+        exit(1)
+    return output
 
 
 def run_cmd(cmd, timeout=2):
