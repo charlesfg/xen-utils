@@ -178,9 +178,9 @@ if __name__ == '__main__':
     DEBUG = args.debug
 
     pmh = PageMapHandler(args.pid)
-    saddr, eaddr = pmh.getAddrRange(args.area)
+    saddr, eaddr = pmh.getAddrRange(args.region)
     if DEBUG:
-        print("Address of {2} {0:#x}, {1:#x}".format(saddr, eaddr, args.area))
+        print("Address of {2} {0:#x}, {1:#x}".format(saddr, eaddr, args.region))
     pmh.generate_all_pages(saddr, eaddr)
     pmh.update_entries()
     page = pmh.get_page(args.order)
