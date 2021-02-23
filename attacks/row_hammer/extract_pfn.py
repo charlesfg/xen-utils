@@ -163,9 +163,10 @@ if __name__ == '__main__':
         description='Script to get a physical page address given a pid and a specification\n'
                     'Must be root to run this p')
     parser.add_argument('--pid', '-p', metavar='pid', type=int, required=True, help='Pid of the Process')
-    parser.add_argument('--area', '-a', metavar='address_area', type=str, required=True, choices=('stack', 'heap', 'vdso'),
-                        help='Area from possible addresses to obtain, one of: %(choices)s', )
-    parser.add_argument('--order','-o', metavar='page-order', type=str, choices=('first', 'last', 'random'), default='first',
+    parser.add_argument('--region', '-r', metavar='memory_regions', type=str, choices=('stack', 'heap', 'vdso', 'vvar'),
+                        required=True, help='Area from possible addresses to obtain, one of: %(choices)s', )
+    parser.add_argument('--order','-o', metavar='page-order', type=str, choices=('first', 'last', 'random'),
+                        default='first', required=True,
                         help='The order of the page to return, one of: %(choices)s')
     parser.add_argument('--debug', '-d', action='store_true', required=False, default=False,
                         help='Enable printing debug messages')

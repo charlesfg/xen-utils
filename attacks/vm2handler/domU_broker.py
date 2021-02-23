@@ -42,7 +42,7 @@ if __name__ == '__main__':
     parser.add_argument('--area', '-a', metavar='address_area', type=str, choices=('stack', 'heap', 'vdso', 'vvar'),
                         required=True, help='Area from possible addresses to obtain, one of: %(choices)s', )
     parser.add_argument('--order', '-o', metavar='page-order', type=str, choices=('first', 'last', 'random'),
-                        default='first',
+                        default='first', required=True,
                         help='The order of the page to return, one of: %(choices)s')
     parser.add_argument('--debug', '-d', action='store_true', required=False, default=False,
                         help='Enable printing debug messages')
