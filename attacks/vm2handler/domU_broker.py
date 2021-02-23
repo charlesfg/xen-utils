@@ -39,7 +39,7 @@ if __name__ == '__main__':
                     'given a process selector script and a specification\n'
                     'Must be root to run this p')
     parser.add_argument('--script', '-s', metavar='script', type=str, required=True, help='Script under the ps folder')
-    parser.add_argument('--area', '-a', metavar='address_area', type=str, choices=('stack', 'heap', 'vdso', 'vvar'),
+    parser.add_argument('--region', '-r', metavar='memory_regions', type=str, choices=('stack', 'heap', 'vdso', 'vvar'),
                         required=True, help='Area from possible addresses to obtain, one of: %(choices)s', )
     parser.add_argument('--order', '-o', metavar='page-order', type=str, choices=('first', 'last', 'random'),
                         default='first', required=True,
