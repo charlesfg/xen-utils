@@ -19,6 +19,7 @@ import random
 import struct
 import logging
 import subprocess
+import traceback
 
 from utils.bash_utils import run_cmd
 from utils.log_util import ScriptLogger
@@ -55,7 +56,7 @@ if __name__ == '__main__':
     # Validate all values
 
     # Start Script
-    script_logger = ScriptLogger(__file__, debug=DEBUG,mute_console=not args.verbose)
+    script_logger = ScriptLogger(__file__, debug=DEBUG, mute_console=not args.verbose)
     logger = script_logger.get_main_logger()
 
     logger.debug("Starting domU broker with: {}".format(args))
@@ -65,19 +66,18 @@ if __name__ == '__main__':
         pid = int(run_cmd("ps/{}".format(args.script)))
         logger.info("Pid returned {}".format(pid))
     except subprocess.CalledProcessError as e:
-        logger.error("Could not acquire the pid\n:{}".format(e) )
+        logger.error("Could not acquire the pid\n:{}".format(e))
+        logger.error("!! {}".format(traceback.format_exc()))
         exit(1)
 
-    cmd = "python page_selector.py --pid {} --area {} --order {}".format(pid, args.area, args.order)
+    cmd = "python3 page_selector.py --pid {} --area {} --order {}".format(pid, args.area, args.order)
     logger.info("Will invoke the command:\n{}".format(cmd))
     try:
         gpfn = run_cmd(cmd)
     except subprocess.CalledProcessError as e:
-        logger.error("Could not acquire the gpfn\n:{}".format(e) )
+        logger.error("Could not acquire the gpfn\n:{}".format(e))
+        logger.error("!! {}".format(traceback.format_exc()))
         exit(1)
 
     logger.info("Returned the GPFN {}".format(gpfn))
     print(gpfn)
-
-
-
