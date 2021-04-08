@@ -169,8 +169,8 @@ if __name__ == '__main__':
                     'given a pid and a specification\n'
                     'Must be root to run this p')
     parser.add_argument('--pid', '-p', metavar='pid', type=int, required=True, help='Pid of the Process')
-    parser.add_argument('--area', '-a', metavar='address_area', type=str, required=True, choices=('stack', 'heap', 'vdso'),
-                        help='Area from possible addresses to obtain, one of: %(choices)s', )
+    parser.add_argument('--region', '-r', metavar='memory_regions', type=str, choices=('stack', 'heap', 'vdso', 'vvar'),
+                        required=True, help='Area from possible addresses to obtain, one of: %(choices)s', )
     parser.add_argument('--order','-o', metavar='page-order', type=str, choices=('first', 'last', 'random'), default='first',
                         help='The order of the page to return, one of: %(choices)s')
     parser.add_argument('--debug', '-d', action='store_true', required=False, default=False,
@@ -183,9 +183,9 @@ if __name__ == '__main__':
     DEBUG = args.debug
 
     pmh = PageMapHandler(args.pid)
-    saddr, eaddr = pmh.getAddrRange(args.area)
+    saddr, eaddr = pmh.getAddrRange(args.region)
     if DEBUG:
-        print("Address of {2} {0:#x}, {1:#x}".format(saddr, eaddr, args.area))
+        print("Address of {2} {0:#x}, {1:#x}".format(saddr, eaddr, args.region))
     pmh.generate_all_pages(saddr, eaddr)
     pmh.update_entries()
     page = pmh.get_page(args.order)

@@ -1,0 +1,6 @@
+#!/bin/bash
+#
+# Dump script to test the functionality
+# will return the init pid
+echo 1
+
