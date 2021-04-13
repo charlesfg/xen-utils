@@ -28,7 +28,8 @@ static  long addr = 0;
 static int value = 0;
 module_param(value, int, 0);
 module_param(addr,  long, 0);
-void* phys_addr;
+uint64_t phys_addr;
+uint64_t va;
 
 
 static int __init change_mem_init(void) {
@@ -39,9 +40,32 @@ static int __init change_mem_init(void) {
         printk("Address parameter is mandatory!\n");
         return -1;
     }
-    printk("The address passed is: %lx\n",addr);
-    phys_addr = virt_to_phys(addr);
+    uint64_t gpfn = addr >> PAGE_SHIFT;
+    int offset = addr & ~PAGE_MASK;
+    printk("The INPUT address info:\n");
+    printk("\taddres:\t%lx\n",addr);
+    printk("\tgpfn:\t%llx\n",gpfn);
+    printk("\toffset:\t%x\n",offset);
 
+    va = __get_free_pages(GFP_KERNEL, 0);
+    
+
+
+    phys_addr = virt_to_phys((void*) va);
+    printk("The LOCAL address info:\n");
+    printk("\tvirtual:\t%llx\n",va);
+    printk("\tphysical:\t%llx\n",phys_addr);
+
+    pte_t p;
+    p.pte = gpfn;
+
+    
+    int rc = HYPERVISOR_update_va_mapping(va, p, UVMF_TLB_FLUSH);
+
+    if ( rc ) 
+    {
+        printk("Eror on updating va mapping: %d\n", rc);
+    }
 
     printk("Mapping the physical address\n");
 
