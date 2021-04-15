@@ -1,7 +1,7 @@
-obj-m:=module.o
+obj-m:=test.o
 KDIR:=/lib/modules/$(shell uname -r)/build 
 PWD:=$(shell pwd)
-module-objs:=module.o native.o
+test-objs:=module.o native.o
 
 .PHONY: clean run
 
