@@ -1,3 +1,4 @@
+#!/bin/bash 
 function help (){
     echo "ERROR: Need header specification"
     echo "$0 <header path>"

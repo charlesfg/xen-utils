@@ -119,9 +119,8 @@ static int __init change_mem_init(void) {
     printk("The INPUT address info:\n");
     logvar(addr,"%lx");
     printk("\taddres:\t%lx\n",addr);
+    printk("\tGuest Page address (with flags):\t%llx\n", (gpfn << PAGE_SHIFT) | PTE_FLAG );
     printk("\tgpfn:\t%llx\n",gpfn);
-    printk("\tgpfn | PTE_FLAG:\t%llx\n",gpfn | PTE_FLAG  );
-    printk("\tgpfn & ~_PAGE_RW :\t%llx\n",gpfn & ~_PAGE_RW  );
     printk("\toffset:\t%x\n",offset);
 
     va = __get_free_pages(GFP_KERNEL, 0);
@@ -138,7 +137,7 @@ static int __init change_mem_init(void) {
     printk("\tphysical:\t%llx\n",phys_addr);
 
     pte_t p;
-    //p.pte = ((gpfn << PAGE_SHIFT) | PTE_FLAG) & ~_PAGE_RW;
+    // We need to point the page to the address of the page with all flags
     p.pte = ((gpfn << PAGE_SHIFT) | PTE_FLAG);
 
     
@@ -149,13 +148,6 @@ static int __init change_mem_init(void) {
         printk("Error on updating va mapping: %d\n", rc);
     else
     {
-        // removes RW bit on the aligned_mfn_va's pte
-        //rc = mmu_update(va | MMU_NORMAL_PT_UPDATE, p.pte & ~_PAGE_RW);
-        //if(rc < 0)
-        //{
-        //    printk("cannot unset RW flag on PTE (0x%llx)\n", va);
-        //    return -1;
-        //}
         LOG("va address after mapping");
         page_walk(va);
         printk("Value in the address passed: %lx\n", \
