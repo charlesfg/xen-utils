@@ -1,5 +1,6 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/sched.h>
 #include <linux/types.h>
 #include <asm/xen/page.h>
 
@@ -26,7 +27,9 @@ struct xen_memory_exchange {
 };
 
 static int init_test(void) {
+  int pid = current->pid;
   pr_warn("call_xen_memory_op is at %p\n", call_xen_memory_op);
+  pr_warn("pid %d\n", pid);
   return 0;
 }
 
@@ -39,10 +42,12 @@ static void cleanup_test(void) {
   // hypervisor is lower than kernel, so hypervisor reference has to come first
   #define OUT_EXTENT_BASE_ADDR 0
 
+
   idt_addr = read_idt_addr();
   pr_warn("IDT at 0x%llx\n", idt_addr);
   target_addr = idt_addr + 16 * INTERRUPT_PAGEFAULT;
   pr_warn("write target address: 0x%llx\n", target_addr);
+  pr_warn("write target physical address: 0x%llx\n", virt_to_phys((void*)target_addr));
   if ((target_addr & 0x7) != 0) {
     pr_warn("target_addr misaligned\n");
     return;
