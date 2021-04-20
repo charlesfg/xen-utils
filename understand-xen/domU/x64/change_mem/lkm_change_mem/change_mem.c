@@ -63,7 +63,7 @@ static int __init change_mem_init(void) {
     void __iomem *io = ioremap(addr, 4);
     if ( io == NULL) 
     {
-        printk(KERN_ERR "Could not map the physical addres %p\n", addr);
+        printk("Could not map the physical addres %p\n",(void*) addr);
         return -1;
     }
 

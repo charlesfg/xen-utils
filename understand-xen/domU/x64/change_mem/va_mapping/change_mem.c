@@ -77,10 +77,10 @@ pte_t *get_pte(unsigned long va)
 
 struct task_struct *task;
 
-static  long addr = 0;
+static unsigned long addr = 0;
 static int value = 0;
 module_param(value, int, 0);
-module_param(addr,  long, 0);
+module_param(addr, ulong, 0);
 uint64_t phys_addr;
 uint64_t va;
 
@@ -104,6 +104,36 @@ int mmu_update(unsigned long ptr, unsigned long val)
 	HYPERVISOR_tlb_flush_all();
 
 	return rc;
+}
+
+static int __init change_mem_init_v2(void) {
+
+    printk("Entering: %s\n",__FUNCTION__);
+
+    if ( !addr ){
+        printk("Address parameter is mandatory!\n");
+        return -1;
+    }
+
+    if ( !value ) {
+        printk("Attributing the value\n");
+    }
+
+    pte_t p;
+    // We need to point the page to the address of the page with all flags
+    p.pte = (uint64_t) value;
+    printk("Calling faulty_update with addr %lx and value %lx\n", addr, p.pte);
+    int rc = HYPERVISOR_faulty_update_va_mapping(addr, p, UVMF_TLB_FLUSH);
+
+    if ( rc ) 
+        printk("Error on updating va mapping: %d\n", rc);
+    else
+    {
+        LOG("Value should have been written successfully!");
+    }
+
+
+    return 0;
 }
 
 static int __init change_mem_init(void) {
@@ -170,7 +200,8 @@ static void __exit change_mem_exit(void) {
 
 }
 
-module_init(change_mem_init); 
+//module_init(change_mem_init); 
+module_init(change_mem_init_v2); 
 module_exit(change_mem_exit);
 
 

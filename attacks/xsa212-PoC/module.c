@@ -73,8 +73,14 @@ static void cleanup_test(void) {
     },
     .nr_exchanged = nr_exchanged
   };
+
+  // In this case it will acess the addres encoded in :
+  //      exch.out.extent_start + 8 * exch.nr_exchanged
+  pr_warn("exch.out.extent_start:\t%x\n",OUT_EXTENT_BASE_ADDR);
+  pr_warn("exch.nr_exchanged:\t%llx\n",nr_exchanged);
+  pr_warn("Address to be accessed: :\t%llx\n", OUT_EXTENT_BASE_ADDR + 8 *nr_exchanged);
   ret = call_xen_memory_op(XENMEM_exchange, &args);
-  pr_warn("hypercall returns 0x%lx\n", ret);
+  pr_warn("hypercall returns %ld\n", ret);
 }
 
 module_init(init_test);
