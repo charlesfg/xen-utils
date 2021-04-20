@@ -1,3 +1,4 @@
+#!/bin/bash
 obj=change_mem
 for i in $( ls ${obj}_[0-9].c);
 do

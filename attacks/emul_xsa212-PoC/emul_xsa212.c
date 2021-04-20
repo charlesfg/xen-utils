@@ -53,9 +53,10 @@ static void cleanup_test(void) {
     return;
   }
 
-//  victim_page_virt = (void*)__get_free_pages(GFP_KERNEL, 0);
-//  in_extent = virt_to_mfn(victim_page_virt);
-//
+  victim_page_virt = (void*)__get_free_pages(GFP_KERNEL, 0);
+  in_extent = virt_to_mfn(victim_page_virt);
+  pr_warn("in_extent address: 0x%llx\n", in_extent);
+
 //  // We need to do this to make steal_page() in memory_exchange() work.
 //  // Equivalent to xen_zap_pfn_range(victim_page_virt, 0, NULL, NULL).
 //  call_xen_update_va_mapping(victim_page_virt, 0/*VOID_PTE*/, 0);
