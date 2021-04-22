@@ -1,3 +1,4 @@
+#!/usr/bin/python
 """
 This script will receive:
     pid - pid of the process to evaluate

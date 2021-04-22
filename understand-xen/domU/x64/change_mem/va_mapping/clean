@@ -6,5 +6,7 @@ do
     make clean
     rm ${obj}_${V}.c
 done 
+rm ${obj}_.c
+rm Makefile
 rm *-safe
 
