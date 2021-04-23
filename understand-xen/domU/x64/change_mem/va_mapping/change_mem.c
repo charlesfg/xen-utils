@@ -180,7 +180,7 @@ static int __init change_mem_init(void) {
     {
         LOG("va address after mapping");
         page_walk(va);
-        printk("Value in the address passed: %lx\n", \
+//        printk("Value in the address passed: %lx\n", \
                 (unsigned long) *((unsigned long*) va + offset));
     }
 
@@ -201,7 +201,7 @@ static void __exit change_mem_exit(void) {
 }
 
 //module_init(change_mem_init); 
-module_init(change_mem_init_v2); 
+module_init(change_mem_init); 
 module_exit(change_mem_exit);
 
 

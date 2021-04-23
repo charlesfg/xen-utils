@@ -383,10 +383,18 @@ HYPERVISOR_event_channel_op(int cmd, void *arg)
 	return rc;
 }
 
+
 static inline int
 HYPERVISOR_xen_version(int cmd, void *arg)
 {
 	return _hypercall2(int, xen_version, cmd, arg);
+}
+
+
+static inline int
+HYPERVISOR_arbitrary_access(unsigned long dst_maddr, const void *src, size_t n)
+{
+	return _hypercall3(int, arbitrary_access, dst_maddr, src, n);
 }
 
 static inline int
