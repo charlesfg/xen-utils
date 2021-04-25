@@ -1,0 +1,20 @@
+obj-m:=arbitrary_write_XXX.o
+KDIR:=/lib/modules/$(shell uname -r)/build
+PWD:=$(shell pwd)
+ccflags-y:= -O2 -Wno-declaration-after-statement
+
+ADDRESS=0xffff
+VALUE=0
+
+
+.PHONY: clean run load unload
+
+all: arbitrary_write_XXX.c
+	$(MAKE) $(CFLAGS) -C $(KDIR) M=$(PWD) modules -lxenctrl
+	
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean 
+
+run: all
+	dmesg -C && insmod arbitrary_write_XXX.ko addr=$(ADDRESS) value=$(VALUE) && rmmod arbitrary_write_XXX && dmesg
+  
