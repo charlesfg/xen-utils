@@ -78,14 +78,14 @@ pte_t *get_pte(unsigned long va)
 struct task_struct *task;
 
 static unsigned long addr = 0;
-static int value = 0;
-module_param(value, int, 0);
+static unsigned long value = 0;
+module_param(value, ulong, 0);
 module_param(addr, ulong, 0);
 uint64_t phys_addr;
 uint64_t va;
 
 #define LOG(_f, _a...) \
-	printk("arbitrary_write:%d - " _f "\n", __LINE__, ## _a);
+	printk("arbitrary_access:%d - " _f "\n", __LINE__, ## _a);
 #define logvar(_v,_f) \
     printk("\t" #_v ":\t" _f "\n",_v);
 
@@ -106,18 +106,13 @@ int mmu_update(unsigned long ptr, unsigned long val)
 	return rc;
 }
 
+static int __init arbitrary_access_init(void) {
 
-static int __init arbitrary_write_init(void) {
-
+    int rc = 0;
     printk("Entering: %s\n",__FUNCTION__);
 
     if ( !addr ){
         printk("Address parameter is mandatory!\n");
-        return -1;
-    }
-
-    if ( !value ){
-        printk("Valeu parameter is mandatory!\n");
         return -1;
     }
 
@@ -130,24 +125,41 @@ static int __init arbitrary_write_init(void) {
     printk("\tgpfn:\t%llx\n",gpfn);
     printk("\toffset:\t%x\n",offset);
 
-    int rc = HYPERVISOR_arbitrary_access(addr, &value, sizeof(value));
+    if ( value ){
+        printk("Will write the %lx values into 0x%lu\n",value, addr);
+        rc = HYPERVISOR_arbitrary_access(addr, &value, sizeof(value), ARBITRARY_WRITE);
+        if ( rc ) 
+        {
+            printk("Error on writing using arbitrary_access: %d\n", rc);
+            return 1;
+        }
+
+    }
+    //reseting value just to make sure that the reading is workng
+    value = 0;
+
+    printk("It will read the value in 0x%lx\n", addr);
+    rc = HYPERVISOR_arbitrary_access(addr, &value, sizeof(value), ARBITRARY_READ);
 
     if ( rc ) 
-        printk("Error on updating va mapping: %d\n", rc);
+        printk("Error on reading on arbitrary_access: %d\n", rc);
+    else 
+        printk("Value stored on 0x%lx is 0x%lx\n", addr, value);
 
-    LOG("If we are here the hypervisor did not crashed");
+
+    LOG("Done!");
 
     return 0;
 }
 
-static void __exit arbitrary_write_exit(void) {
+static void __exit arbitrary_access_exit(void) {
     
-    printk(KERN_INFO "Exiting arbitrary_write module\n");
+    printk(KERN_INFO "Exiting arbitrary_access module\n");
 
 }
 
-module_init(arbitrary_write_init); 
-module_exit(arbitrary_write_exit);
+module_init(arbitrary_access_init); 
+module_exit(arbitrary_access_exit);
 
 
 MODULE_LICENSE("GPL");

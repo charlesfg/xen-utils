@@ -3,7 +3,7 @@
   "directory": "/usr/src/linux-headers-3.13.0-170-generic", 
   "arguments": [
    "gcc", 
-   "-Wp,-MD,/root/xen-utils/understand-xen/domU/x64/change_mem/arbitrary_write/.arbitrary_write_1.mod.o.d", 
+   "-Wp,-MD,/root/xen-utils/understand-xen/domU/x64/change_mem/arbitrary_access/.arbitrary_write_1.mod.o.d", 
    "-nostdinc", 
    "-isystem", 
    "/usr/lib/gcc/x86_64-linux-gnu/5/include", 
@@ -75,14 +75,14 @@
    "-O2", 
    "-Wno-declaration-after-statement", 
    "-DKBUILD_STR(s)=#s", 
-   "-DKBUILD_BASENAME=KBUILD_STR(arbitrary_write_1.mod)", 
-   "-DKBUILD_MODNAME=KBUILD_STR(arbitrary_write_1)", 
+   "-DKBUILD_BASENAME=KBUILD_STR(arbitrary_access_1.mod)", 
+   "-DKBUILD_MODNAME=KBUILD_STR(arbitrary_access_1)", 
    "-DMODULE", 
    "-c", 
    "-o", 
-   "/root/xen-utils/understand-xen/domU/x64/change_mem/arbitrary_write/arbitrary_write_1.mod.o", 
-   "/root/xen-utils/understand-xen/domU/x64/change_mem/arbitrary_write/arbitrary_write_1.mod.c"
+   "/root/xen-utils/understand-xen/domU/x64/change_mem/arbitrary_access/arbitrary_write_1.mod.o", 
+   "/root/xen-utils/understand-xen/domU/x64/change_mem/arbitrary_access/arbitrary_write_1.mod.c"
   ], 
-  "file": "/root/xen-utils/understand-xen/domU/x64/change_mem/arbitrary_write/arbitrary_write_1.mod.c"
+  "file": "/root/xen-utils/understand-xen/domU/x64/change_mem/arbitrary_access/arbitrary_write_1.mod.c"
  }
 ]
