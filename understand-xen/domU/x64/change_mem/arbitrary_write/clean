@@ -1,0 +1,12 @@
+obj=arbitrary_access
+for i in $( ls ${obj}_[0-9].c);
+do
+    V=$(basename $i .c | sed "s/${obj}_//" | cat)
+    bash -x compile.sh $V
+    make clean
+    rm ${obj}_${V}.c
+done 
+rm ${obj}_.c
+rm Makefile
+rm *-safe
+

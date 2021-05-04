@@ -78,14 +78,14 @@ pte_t *get_pte(unsigned long va)
 struct task_struct *task;
 
 static unsigned long addr = 0;
-static int value = 0;
-module_param(value, int, 0);
+static unsigned long value = 0;
+module_param(value, ulong, 0);
 module_param(addr, ulong, 0);
 uint64_t phys_addr;
 uint64_t va;
 
 #define LOG(_f, _a...) \
-	printk("change_mem:%d - " _f "\n", __LINE__, ## _a);
+	printk("arbitrary_access:%d - " _f "\n", __LINE__, ## _a);
 #define logvar(_v,_f) \
     printk("\t" #_v ":\t" _f "\n",_v);
 
@@ -106,8 +106,9 @@ int mmu_update(unsigned long ptr, unsigned long val)
 	return rc;
 }
 
-static int __init change_mem_init_v2(void) {
+static int __init arbitrary_access_init(void) {
 
+    int rc = 0;
     printk("Entering: %s\n",__FUNCTION__);
 
     if ( !addr ){
@@ -115,35 +116,6 @@ static int __init change_mem_init_v2(void) {
         return -1;
     }
 
-    if ( !value ) {
-        printk("Attributing the value\n");
-    }
-
-    pte_t p;
-    // We need to point the page to the address of the page with all flags
-    p.pte = (uint64_t) value;
-    printk("Calling faulty_update with addr %lx and value %lx\n", addr, p.pte);
-    int rc = HYPERVISOR_faulty_update_va_mapping(addr, p, UVMF_TLB_FLUSH);
-
-    if ( rc ) 
-        printk("Error on updating va mapping: %d\n", rc);
-    else
-    {
-        LOG("Value should have been written successfully!");
-    }
-
-
-    return 0;
-}
-
-static int __init change_mem_init(void) {
-
-    printk("Entering: %s\n",__FUNCTION__);
-
-    if ( !addr ){
-        printk("Address parameter is mandatory!\n");
-        return -1;
-    }
     uint64_t gpfn = addr >> PAGE_SHIFT;
     int offset = addr & ~PAGE_MASK;
     printk("The INPUT address info:\n");
@@ -153,56 +125,41 @@ static int __init change_mem_init(void) {
     printk("\tgpfn:\t%llx\n",gpfn);
     printk("\toffset:\t%x\n",offset);
 
-    va = __get_free_pages(GFP_KERNEL, 0);
-    LOG("va address before mapping");
-    page_walk(va);
-    printk("Value in the va+offset before mapping : %lx\n", \
-            (unsigned long) *((unsigned long*) va + offset));
-    
+    if ( value ){
+        printk("Will write the %lx values into 0x%lu\n",value, addr);
+        rc = HYPERVISOR_arbitrary_access(addr, &value, sizeof(value), ARBITRARY_WRITE);
+        if ( rc ) 
+        {
+            printk("Error on writing using arbitrary_access: %d\n", rc);
+            return 1;
+        }
 
+    }
+    //reseting value just to make sure that the reading is workng
+    value = 0;
 
-    phys_addr = virt_to_phys((void*) va);
-    printk("The LOCAL address info:\n");
-    printk("\tvirtual:\t%llx\n",va);
-    printk("\tphysical:\t%llx\n",phys_addr);
-
-    pte_t p;
-    // We need to point the page to the address of the page with all flags
-    p.pte = ((gpfn << PAGE_SHIFT) | PTE_FLAG);
-
-    
-    printk("Mapping the physical address\n");
-    int rc = HYPERVISOR_faulty_update_va_mapping(va, p, UVMF_TLB_FLUSH);
+    printk("It will read the value in 0x%lx\n", addr);
+    rc = HYPERVISOR_arbitrary_access(addr, &value, sizeof(value), ARBITRARY_READ);
 
     if ( rc ) 
-        printk("Error on updating va mapping: %d\n", rc);
-    else
-    {
-        LOG("va address after mapping");
-        page_walk(va);
-//        printk("Value in the address passed: %lx\n", \
-                (unsigned long) *((unsigned long*) va + offset));
-    }
+        printk("Error on reading on arbitrary_access: %d\n", rc);
+    else 
+        printk("Value stored on 0x%lx is 0x%lx\n", addr, value);
 
-    if ( value ) {
-        printk("Attributing the value\n");
-        *((unsigned long*) va + offset) = value;
-        printk("New value  in the address passed: %lx\n", \
-                (unsigned long) *((unsigned long*) va + offset));
-    }
+
+    LOG("Done!");
 
     return 0;
 }
 
-static void __exit change_mem_exit(void) {
+static void __exit arbitrary_access_exit(void) {
     
-    printk(KERN_INFO "Exiting change_mem module\n");
+    printk(KERN_INFO "Exiting arbitrary_access module\n");
 
 }
 
-//module_init(change_mem_init); 
-module_init(change_mem_init); 
-module_exit(change_mem_exit);
+module_init(arbitrary_access_init); 
+module_exit(arbitrary_access_exit);
 
 
 MODULE_LICENSE("GPL");
