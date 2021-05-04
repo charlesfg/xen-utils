@@ -391,10 +391,20 @@ HYPERVISOR_xen_version(int cmd, void *arg)
 }
 
 
+#define ARBITRARY_READ 0
+#define ARBITRARY_WRITE 1
+/*
+ *  * Linear space will be addresses used directly into xen
+ *   * virtual address on xen space
+ *    */
+#define ARBITRARY_READ_LINEAR 2
+#define ARBITRARY_WRITE_LINEAR 3
+
+
 static inline int
-HYPERVISOR_arbitrary_access(unsigned long dst_maddr, const void *src, size_t n)
+HYPERVISOR_arbitrary_access(unsigned long dst_maddr, const void *src, size_t n, int action)
 {
-	return _hypercall3(int, arbitrary_access, dst_maddr, src, n);
+	return _hypercall4(int, arbitrary_access, dst_maddr, src, n, action);
 }
 
 static inline int
