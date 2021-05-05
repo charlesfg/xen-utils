@@ -1,0 +1,33 @@
+host                   : oxum
+release                : 4.2.0-42-generic
+version                : #49~14.04.1-Ubuntu SMP Wed Jun 29 20:22:11 UTC 2016
+machine                : x86_64
+nr_cpus                : 24
+max_cpu_id             : 31
+nr_nodes               : 2
+cores_per_socket       : 6
+threads_per_core       : 2
+cpu_mhz                : 2527
+hw_caps                : bfebfbff:2c100800:00000000:00003f00:029ee3ff:00000000:00000001:00000000
+virt_caps              : hvm
+total_memory           : 98291
+free_memory            : 95179
+sharing_freed_memory   : 0
+sharing_used_memory    : 0
+outstanding_claims     : 0
+free_cpus              : 0
+xen_major              : 4
+xen_minor              : 6
+xen_extra              : .0
+xen_version            : 4.6.0
+xen_caps               : xen-3.0-x86_64 xen-3.0-x86_32p hvm-3.0-x86_32 hvm-3.0-x86_32p hvm-3.0-x86_64 
+xen_scheduler          : credit
+xen_pagesize           : 4096
+platform_params        : virt_start=0xffff800000000000
+xen_changeset          : Mon Oct 5 15:33:39 2015 +0100 git:b24ad7b
+xen_commandline        : placeholder dom0_mem=2048M,max:2048M dom0_max_vcpus=4 dom0_vcpus_pin loglvl=all guest_loglvl=all sync_console console_to_ring com1=115200,8n1,0x2f8,3 console=com1,vga
+cc_compiler            : gcc (Ubuntu 5.5.0-12ubuntu1~14.04) 5.5.0 20171010
+cc_compile_by          : root
+cc_compile_domain      : 
+cc_compile_date        : Wed May  5 12:17:41 BRT 2021
+xend_config_format     : 4

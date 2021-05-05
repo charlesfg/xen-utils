@@ -1,5 +1,6 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/sched.h>
 #include <linux/types.h>
 #include <asm/xen/page.h>
 #include <asm/xen/hypercall.h> 
@@ -69,7 +70,9 @@ struct task_struct *task;
 
 
 static int init_test(void) {
+  int pid = current->pid;
   pr_warn("call_xen_memory_op is at %p\n", call_xen_memory_op);
+  pr_warn("pid %d\n", pid);
   return 0;
 }
 
