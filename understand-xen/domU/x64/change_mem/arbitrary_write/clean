@@ -1,4 +1,4 @@
-obj=arbitrary_write
+obj=arbitrary_access
 for i in $( ls ${obj}_[0-9].c);
 do
     V=$(basename $i .c | sed "s/${obj}_//" | cat)

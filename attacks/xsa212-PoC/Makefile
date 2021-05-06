@@ -14,3 +14,8 @@ $(KBUILD_EXTMOD)/native.o: native.asm
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean 
 
+run:
+	dmesg -c
+	insmod test.ko
+	rmmod test
+	dmesg
