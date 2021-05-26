@@ -1,0 +1,20 @@
+obj-m:=print_dom0_mfn.o
+KDIR:=/lib/modules/$(shell uname -r)/build
+PWD:=$(shell pwd)
+ccflags-y:= -O2 -Wno-declaration-after-statement
+
+.PHONY: clean run clear
+
+all: print_dom0_mfn.c
+	$(MAKE) $(CFLAGS) -C $(KDIR) M=$(PWD) modules -lxenctrl
+	
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean 
+
+clear:
+	dmesg -C && insmod print_dom0_mfn.ko clear=1 && rmmod print_dom0_mfn && dmesg
+
+run: all
+	dmesg -C && insmod print_dom0_mfn.ko && rmmod print_dom0_mfn && dmesg
+ 
+  

@@ -1,0 +1,4 @@
+
+cp print_dom0_mfn.c print_dom0_mfn_${1}.c
+sed "s/XXX/${1}/g" Makefile_pttrn > Makefile
+
