@@ -57,7 +57,7 @@ if __name__ == '__main__':
                         default='first',
                         help='The order of the page to return, one of: %(choices)s')
     parser.add_argument('--hex', '-x', type=lambda x: hex(int(x, 0)), required=False,
-                        help='Value to use in the action is needed. Must be a sequence of bytes encoded as 
+                        help='Value to use in the action is needed. Must be a sequence of bytes encoded as \
                         hexadecimal separeted by space: Ex. "EB FA 14 F5"')
     parser.add_argument('--script', '-s', metavar='script', type=str, required=True, help='Script under the ps folder')
     parser.add_argument('--debug', '-d', action='store_true', required=False, default=False,
