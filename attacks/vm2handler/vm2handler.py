@@ -51,7 +51,7 @@ if __name__ == '__main__':
                         help='Host where the script will get the pages.')
     parser.add_argument('--region', '-r', metavar='memory_regions', type=str, choices=('stack', 'heap', 'vdso', 'vvar'),
                         required=True, help='Area from possible addresses to obtain, one of: %(choices)s', )
-    parser.add_argument('--action', '-a', metavar='action', type=str, choices=('write'),
+    parser.add_argument('--action', '-a', metavar='action', type=str, choices=('write','find'),
                         required=True, help='Action to take in the page, one of: %(choices)s', )
     parser.add_argument('--order', '-o', metavar='page-order', required=True, type=str, choices=('first', 'last', 'random'),
                         default='first',
