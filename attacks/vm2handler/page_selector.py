@@ -86,6 +86,17 @@ class PageMapHandler:
         self.all_mem_entries = []
         self.all_mfn = []
 
+    def getExecAddrRanges(self):
+        with open(self.maps_path, 'r') as f:
+            for i in f.readlines():
+                fields = list(map(str.strip, i.split()))
+                if 'xp' in fields[1]:
+                    addrs = fields[0].split('-')
+                    if DEBUG:
+                        print(fields)
+                        print(addrs)
+                    yield int(addrs[0], 16), int(addrs[1], 16)
+
     def getAddrRange(self, area):
         if area == 'exec':
             with open(self.maps_path, 'r') as f:
@@ -142,9 +153,15 @@ class PageMapHandler:
         with open(self.pagemaps_path, 'rb') as f:
             for i in self.all_mem_entries:
                 f.seek(i.pfn * size, 0)
-                i.set_pm_entry(struct.unpack('Q', f.read(size))[0])
-                if DEBUG:
-                    print(i)
+                pm_entry = None
+                try: 
+                    pm_entry = struct.unpack('Q', f.read(size))[0]
+                    i.set_pm_entry(pm_entry)
+                    if DEBUG:
+                        print(i)
+                except:
+                    if DEBUG:
+                        print("!! ERROR for pfn {}! Skipping it!".format(i.pfn))
 
         pass
 
@@ -199,12 +216,21 @@ if __name__ == '__main__':
     DEBUG = args.debug
 
     pmh = PageMapHandler(args.pid)
-    saddr, eaddr = pmh.getAddrRange(args.region)
-    if DEBUG:
-        print("Address of {2} {0:#x}, {1:#x}".format(saddr, eaddr, args.region))
-    pmh.generate_all_pages(saddr, eaddr)
+
+    if args.region == 'exec':
+        for saddr, eaddr in pmh.getExecAddrRanges():
+            if DEBUG:
+                print("Address of {2} {0:#x}, {1:#x}".format(saddr, eaddr, args.region))
+            pmh.generate_all_pages(saddr, eaddr)
+    else:
+        saddr, eaddr = pmh.getAddrRange(args.region)
+        if DEBUG:
+            print("Address of {2} {0:#x}, {1:#x}".format(saddr, eaddr, args.region))
+        pmh.generate_all_pages(saddr, eaddr)
+
     pmh.update_entries()
     pages= pmh.get_pages(args.order)
+
     for p in pages:
         if not args.verbose:
             if p.mfn:
