@@ -53,11 +53,12 @@ if __name__ == '__main__':
                         required=True, help='Area from possible addresses to obtain, one of: %(choices)s', )
     parser.add_argument('--action', '-a', metavar='action', type=str, choices=('write'),
                         required=True, help='Action to take in the page, one of: %(choices)s', )
-    parser.add_argument('--order', '-o', metavar='page-order', required=True, type=str, choices=('first', 'last', 'random'),
+    parser.add_argument('--order', '-o', metavar='page-order', required=True, type=str, choices=('first', 'last', 'random','all'),
                         default='first',
                         help='The order of the page to return, one of: %(choices)s')
     parser.add_argument('--hex', '-x', type=lambda x: hex(int(x, 0)), required=False,
-                        help='Value to use in the action is needed. Will be parsed to a hexadecimal')
+                        help='Value to use in the action is needed. Must be a sequence of bytes encoded as 
+                        hexadecimal separeted by space: Ex. "EB FA 14 F5"')
     parser.add_argument('--script', '-s', metavar='script', type=str, required=True, help='Script under the ps folder')
     parser.add_argument('--debug', '-d', action='store_true', required=False, default=False,
                         help='Enable printing debug messages')
@@ -93,7 +94,7 @@ if __name__ == '__main__':
     gpfn = execute_or_abort(cmd, "Could not acquire the gpfn", log=logger)
     logger.info("Returned GPFN {}".format(gpfn))
 
-    cmd = "cd dom0 && ./page_exploiter -d {} -a {} -H {} {}".format(host["id"], args.action, args.hex, gpfn)
+    cmd = "cd dom0 && ./page_exploiter -d {} -a {} -H '{}' {}".format(host["id"], args.action, args.hex, gpfn)
     output = execute_or_abort(cmd, "Could not exploit page",cmd_msg="Will exploit the page with",log=logger)
 
     logger.info("Output of the page exploiter: \n{}\n".format(output))
