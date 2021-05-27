@@ -87,15 +87,28 @@ class PageMapHandler:
         self.all_mfn = []
 
     def getAddrRange(self, area):
-        with open(self.maps_path, 'r') as f:
-            for i in f.readlines():
-                fields = i.split()
-                if area in fields[-1]:
-                    addrs = fields[0].split('-')
-                    if DEBUG:
-                        print(fields)
-                        print(addrs)
-                    return int(addrs[0], 16), int(addrs[1], 16)
+        if area == 'exec':
+            with open(self.maps_path, 'r') as f:
+                for i in f.readlines():
+                    fields = list(map(str.strip, i.split()))
+                    if not fields[-1] or '.so' in fields[-1]:
+                        continue
+                    if 'xp' in fields[1] and '/' in fields[-1]:
+                        addrs = fields[0].split('-')
+                        if DEBUG:
+                            print(fields)
+                            print(addrs)
+                        return int(addrs[0], 16), int(addrs[1], 16)
+        else:
+            with open(self.maps_path, 'r') as f:
+                for i in f.readlines():
+                    fields = i.split()
+                    if area in fields[-1]:
+                        addrs = fields[0].split('-')
+                        if DEBUG:
+                            print(fields)
+                            print(addrs)
+                        return int(addrs[0], 16), int(addrs[1], 16)
 
     def generate_all_pages(self, saddr, eaddr):
 
@@ -172,7 +185,7 @@ if __name__ == '__main__':
                     'given a pid and a specification\n'
                     'Must be root to run this p')
     parser.add_argument('--pid', '-p', metavar='pid', type=int, required=True, help='Pid of the Process')
-    parser.add_argument('--region', '-r', metavar='memory_regions', type=str, choices=('stack', 'heap', 'vdso', 'vvar'),
+    parser.add_argument('--region', '-r', metavar='memory_regions', type=str, choices=('stack', 'heap', 'vdso', 'vvar', 'exec'),
                         required=True, help='Area from possible addresses to obtain, one of: %(choices)s', )
     parser.add_argument('--order','-o', metavar='page-order', type=str, choices=('first', 'last', 'random', 'all'), default='first',
                         help='The order of the page to return, one of: %(choices)s')

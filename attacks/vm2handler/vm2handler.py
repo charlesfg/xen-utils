@@ -66,7 +66,7 @@ if __name__ == '__main__':
                     'Must be root to run this p')
     parser.add_argument('--host', '-H', metavar='host', type=str, required=True,
                         help='Host where the script will get the pages.')
-    parser.add_argument('--region', '-r', metavar='memory_regions', type=str, choices=('stack', 'heap', 'vdso', 'vvar'),
+    parser.add_argument('--region', '-r', metavar='memory_regions', type=str, choices=('stack', 'heap', 'vdso', 'vvar', 'exec'),
                         required=True, help='Area from possible addresses to obtain, one of: %(choices)s', )
     parser.add_argument('--action', '-a', metavar='action', type=str, choices=('write','find'),
                         required=True, help='Action to take in the page, one of: %(choices)s', )
