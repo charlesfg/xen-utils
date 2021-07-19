@@ -1,7 +1,7 @@
 #CFLAG = -I/var/tpcv/xen_install/xen/tools/libxc -I/var/tpcv/xen_install/xen/tools/include -Wall -O2
-CFLAG =-I/var/xen-dev/xen/tools/libxc -I/var/xen-dev/xen/tools/include -Wall -O2
+CFLAG =-I/var/xen-dev/xen/tools/libxc -I/var/xen-dev/xen/tools/include -Wall  -g
 CC = /usr/bin/gcc
-LDLIBS = -lm -lpthread -lxenctrl
+LDLIBS = -lm -lpthread -lxenctrl -g
 
 vpath %.c ${SRC_PATH}
 

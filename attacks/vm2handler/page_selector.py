@@ -86,16 +86,40 @@ class PageMapHandler:
         self.all_mem_entries = []
         self.all_mfn = []
 
-    def getAddrRange(self, area):
+    def getExecAddrRanges(self):
         with open(self.maps_path, 'r') as f:
             for i in f.readlines():
-                fields = i.split()
-                if area in fields[-1]:
+                fields = list(map(str.strip, i.split()))
+                if 'xp' in fields[1]:
                     addrs = fields[0].split('-')
                     if DEBUG:
                         print(fields)
                         print(addrs)
-                    return int(addrs[0], 16), int(addrs[1], 16)
+                    yield int(addrs[0], 16), int(addrs[1], 16)
+
+    def getAddrRange(self, area):
+        if area == 'exec':
+            with open(self.maps_path, 'r') as f:
+                for i in f.readlines():
+                    fields = list(map(str.strip, i.split()))
+                    if not fields[-1] or '.so' in fields[-1]:
+                        continue
+                    if 'xp' in fields[1] and '/' in fields[-1]:
+                        addrs = fields[0].split('-')
+                        if DEBUG:
+                            print(fields)
+                            print(addrs)
+                        return int(addrs[0], 16), int(addrs[1], 16)
+        else:
+            with open(self.maps_path, 'r') as f:
+                for i in f.readlines():
+                    fields = i.split()
+                    if area in fields[-1]:
+                        addrs = fields[0].split('-')
+                        if DEBUG:
+                            print(fields)
+                            print(addrs)
+                        return int(addrs[0], 16), int(addrs[1], 16)
 
     def generate_all_pages(self, saddr, eaddr):
 
@@ -129,29 +153,38 @@ class PageMapHandler:
         with open(self.pagemaps_path, 'rb') as f:
             for i in self.all_mem_entries:
                 f.seek(i.pfn * size, 0)
-                i.set_pm_entry(struct.unpack('Q', f.read(size))[0])
-                if DEBUG:
-                    print(i)
+                pm_entry = None
+                try: 
+                    pm_entry = struct.unpack('Q', f.read(size))[0]
+                    i.set_pm_entry(pm_entry)
+                    if DEBUG:
+                        print(i)
+                except:
+                    if DEBUG:
+                        print("!! ERROR for pfn {}! Skipping it!".format(i.pfn))
 
         pass
 
-    def get_page(self, order):
+    def get_pages(self, order):
         if order == 'first':
             for i in self.all_mem_entries: #
                 if i.mfn is not None:
-                    return i
+                    return [i]
             pass
         elif order == 'last':
             self.all_mem_entries.reverse()
             for i in self.all_mem_entries: #
                 if i.mfn is not None:
-                    return i
+                    return [i]
+            pass
+        elif order == 'all':
+            return self.all_mem_entries
             pass
         elif order == 'random':
             while True:
                 i = random.choice(self.all_mem_entries)
                 if i.mfn is not None:
-                    return i
+                    return [i]
             pass
         else:
             ValueError("This is impossible. How could I ended up here!?")
@@ -169,9 +202,9 @@ if __name__ == '__main__':
                     'given a pid and a specification\n'
                     'Must be root to run this p')
     parser.add_argument('--pid', '-p', metavar='pid', type=int, required=True, help='Pid of the Process')
-    parser.add_argument('--region', '-r', metavar='memory_regions', type=str, choices=('stack', 'heap', 'vdso', 'vvar'),
+    parser.add_argument('--region', '-r', metavar='memory_regions', type=str, choices=('stack', 'heap', 'vdso', 'vvar', 'exec'),
                         required=True, help='Area from possible addresses to obtain, one of: %(choices)s', )
-    parser.add_argument('--order','-o', metavar='page-order', type=str, choices=('first', 'last', 'random'), default='first',
+    parser.add_argument('--order','-o', metavar='page-order', type=str, choices=('first', 'last', 'random', 'all'), default='first',
                         help='The order of the page to return, one of: %(choices)s')
     parser.add_argument('--debug', '-d', action='store_true', required=False, default=False,
                         help='Enable printing debug messages')
@@ -183,13 +216,25 @@ if __name__ == '__main__':
     DEBUG = args.debug
 
     pmh = PageMapHandler(args.pid)
-    saddr, eaddr = pmh.getAddrRange(args.region)
-    if DEBUG:
-        print("Address of {2} {0:#x}, {1:#x}".format(saddr, eaddr, args.region))
-    pmh.generate_all_pages(saddr, eaddr)
-    pmh.update_entries()
-    page = pmh.get_page(args.order)
-    if not args.verbose:
-        print("{:#x}".format(page.mfn))
+
+    if args.region == 'exec':
+        for saddr, eaddr in pmh.getExecAddrRanges():
+            if DEBUG:
+                print("Address of {2} {0:#x}, {1:#x}".format(saddr, eaddr, args.region))
+            pmh.generate_all_pages(saddr, eaddr)
     else:
-        print(page)
+        saddr, eaddr = pmh.getAddrRange(args.region)
+        if DEBUG:
+            print("Address of {2} {0:#x}, {1:#x}".format(saddr, eaddr, args.region))
+        pmh.generate_all_pages(saddr, eaddr)
+
+    pmh.update_entries()
+    pages= pmh.get_pages(args.order)
+
+    for p in pages:
+        if not args.verbose:
+            if p.mfn:
+                print("{:#x}".format(p.mfn))
+        else:
+            print(p)
+

@@ -2,3 +2,4 @@ print_ulong
 change_mem
 print_int
 virt_to_phys_user
+virt2phys_user

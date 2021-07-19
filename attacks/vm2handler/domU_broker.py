@@ -39,9 +39,9 @@ if __name__ == '__main__':
                     'given a process selector script and a specification\n'
                     'Must be root to run this p')
     parser.add_argument('--script', '-s', metavar='script', type=str, required=True, help='Script under the ps folder')
-    parser.add_argument('--region', '-r', metavar='memory_regions', type=str, choices=('stack', 'heap', 'vdso', 'vvar'),
+    parser.add_argument('--region', '-r', metavar='memory_regions', type=str, choices=('stack', 'heap', 'vdso', 'vvar', 'exec'),
                         required=True, help='Area from possible addresses to obtain, one of: %(choices)s', )
-    parser.add_argument('--order', '-o', metavar='page-order', type=str, choices=('first', 'last', 'random'),
+    parser.add_argument('--order', '-o', metavar='page-order', type=str, choices=('first', 'last', 'random', 'all'),
                         default='first', required=True,
                         help='The order of the page to return, one of: %(choices)s')
     parser.add_argument('--debug', '-d', action='store_true', required=False, default=False,
@@ -79,5 +79,5 @@ if __name__ == '__main__':
         logger.error("!! {}".format(traceback.format_exc()))
         exit(1)
 
-    logger.info("Returned the GPFN {}".format(gpfn))
+    logger.info("Returned the following GPFNs")
     print(gpfn)
