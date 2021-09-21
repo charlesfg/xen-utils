@@ -7,4 +7,5 @@ sudo apt-get -y  install gettext libpixman-1-dev libaio-dev markdown pandoc
 sudo  apt-get install -y libc6-dev-i386
 sudo apt-get install -y  libssl-dev
 sudo apt-get install -y lzma-dev liblzma-dev
+sudo apt-get install libsystemd-dev
 
