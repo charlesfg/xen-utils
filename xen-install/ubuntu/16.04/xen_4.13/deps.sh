@@ -7,5 +7,7 @@ sudo apt-get -y  install gettext libpixman-1-dev libaio-dev markdown pandoc
 sudo  apt-get install -y libc6-dev-i386
 sudo apt-get install -y  libssl-dev
 sudo apt-get install -y lzma-dev liblzma-dev
-sudo apt-get install libsystemd-dev
+sudo apt-get install -y libsystemd-dev
+sudo apt-get install -y qemu
+dpkg -L qemu-system-x86
 
