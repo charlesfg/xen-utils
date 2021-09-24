@@ -1,0 +1,11 @@
+# interfaces(5) file used by ifup(8) and ifdown(8)
+auto lo
+iface lo inet loopback
+auto xenbr0                                                                                         
+iface xenbr0 inet static                                                                            
+        bridge_ports none                                                                           
+        bridge_stp no                                                                               
+        address 192.168.1.1                                                                         
+        netmask 255.255.255.0                                                                       
+        network 192.168.1.0                                                                         
+        broadcast 192.168.1.255    
