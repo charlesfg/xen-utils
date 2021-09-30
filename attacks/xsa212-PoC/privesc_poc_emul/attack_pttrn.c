@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
   sprintf(module_arg, "user_shellcmd_addr=%lu", (unsigned long)argv[1]);
 
   // load module
-  int mod_fd = open("test.ko", O_RDONLY);
+  int mod_fd = open("testXXX.ko", O_RDONLY);
   if (mod_fd == -1)
     err(1, "open module file");
   int init_res = syscall(__NR_finit_module, mod_fd, module_arg, 0);
@@ -34,9 +34,7 @@ int main(int argc, char **argv) {
   if (pud_dummy_page != (void*)0x600000000000ULL)
     err(1, "mmap PUD dummy page");
 
-  puts("Will try to unload the module");
-
   // unload the module, creating the memory mappings
-  if (syscall(__NR_delete_module, "test", O_NONBLOCK))
+  if (syscall(__NR_delete_module, "testXXX", O_NONBLOCK))
     perror("delete_module");
 }
