@@ -1,0 +1,6 @@
+#!/bin/bash
+cp module.c module${1}.c
+sed "s/XXX/${1}/g" Makefile_pttrn > Makefile
+sed "s/XXX/${1}/g" attack_pttrn.c > attack${1}.c
+make
+
