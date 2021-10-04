@@ -1,8 +1,8 @@
 obj=module
 for i in $( ls ${obj}[0-9].c);
 do
-    V=$(basename $i .c | sed "s/${obj}_//" | cat)
-    bash -x compile.sh $V
+    V=$(basename $i .c | sed "s/${obj}//" | cat)
+    bash -x compile $V
     make clean
     rm ${obj}${V}.c
     rm attack${i}.c

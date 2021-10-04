@@ -30,7 +30,7 @@ clean:
 	rm user_shellcode.bin.h
 	rm hv_shellcode.bin.h
 
-run: all
+run: moduleXXX.o
 	dmesg -C && ./attack 'id > /tmp/owned' 
  
   
