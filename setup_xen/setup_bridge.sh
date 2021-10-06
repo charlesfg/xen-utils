@@ -18,7 +18,7 @@ EOF
 sudo sysctl -w net.ipv4.ip_forward=1
 
 sudo iptables -A FORWARD --in-interface xenbr0 -j ACCEPT
-sudo iptables --table nat -A POSTROUTING --out-interface xenbr0 -j MASQUERADE
+sudo iptables --table nat -A POSTROUTING --out-interface enp0s25 -j MASQUERADE
 
 sudo apt-get install iptables-persistent
 
