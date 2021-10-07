@@ -5,7 +5,7 @@ do
     bash -x compile $V
     make clean
     rm ${obj}${V}.c
-    rm attack${i}.c
+    rm attack${V}.c
 done 
 rm attack.c
 rm *-safe

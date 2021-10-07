@@ -55,14 +55,63 @@ void page_walk(unsigned long va)
 	pte_t *pte;
 	struct mm_struct *mm = current->mm;
 
+
+
+    printk("Page Walk for va %p\n", (void *) va);
+
+	pgd = pgd_offset(mm, va);
+    if (pgd_none(*pgd)){
+        printk("pgd none!\n");
+        return;
+    }
+    if (pgd_bad(*pgd)){
+        printk("pgd bad!\n");
+        return;
+    }
+	printk("PGD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pgd, __machine_addr(pgd), *(unsigned long*) pgd, pgd_index(va), (pgd_present(*pgd)) ? "P" : "");
+
+	pud = pud_offset(pgd, va);
+    if (pud_none(*pud)){
+        printk("pud none!\n");
+        return;
+    }
+    if (pud_bad(*pud)){
+        printk("pud bad!\n");
+        return;
+    }
+	printk("PUD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pud, __machine_addr(pud), *(unsigned long*) pud, pud_index(va), (pud_present(*pud)) ? "P" : "");
+
+	pmd = pmd_offset(pud, va);
+    if (pmd_none(*pmd)){
+        printk("pmd none!\n");
+        return;
+    }
+    if (pmd_bad(*pmd)){
+        printk("pmd bad!\n");
+        return;
+    }
+	printk("PMD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pmd, __machine_addr(pmd), *(unsigned long*) pmd, pmd_index(va), (pmd_present(*pmd)) ? "P" : "", (pmd_large(*pmd)) ? "PSE" : "");
+	pte = pte_offset_kernel(pmd, va);
+    if (!pte){
+        printk("PTE not present!\n");
+        return;
+    }
+	printk("PTE (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pte, __machine_addr(pte), *(unsigned long*) pte, pte_index(va), (pte_present(*pte)) ? "P" : "", (pte_write(*pte)) ? "RW" : "");
+}
+
+void semi_page_walk(unsigned long va)
+{
+	pgd_t *pgd;
+	pud_t *pud;
+	pmd_t *pmd;
+	struct mm_struct *mm = current->mm;
+
 	pgd = pgd_offset(mm, va);
 	pud = pud_offset(pgd, va);
 	pmd = pmd_offset(pud, va);
-	pte = pte_offset_kernel(pmd, va);
 	printk("PGD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pgd, __machine_addr(pgd), *(unsigned long*) pgd, pgd_index(va), (pgd_present(*pgd)) ? "P" : "");
 	printk("PUD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pud, __machine_addr(pud), *(unsigned long*) pud, pud_index(va), (pud_present(*pud)) ? "P" : "");
 	printk("PMD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pmd, __machine_addr(pmd), *(unsigned long*) pmd, pmd_index(va), (pmd_present(*pmd)) ? "P" : "", (pmd_large(*pmd)) ? "PSE" : "");
-	printk("PTE (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pte, __machine_addr(pte), *(unsigned long*) pte, pte_index(va), (pte_present(*pte)) ? "P" : "", (pte_write(*pte)) ? "RW" : "");
 }
 
 
@@ -336,8 +385,6 @@ static struct idt_entry *idt_85_remapped_addrs[MAX_PHYS_CORES];
  *   mapped by us: 0xffff82d0c0000000 - 0xffff82d0ffffffff (inaccessible from guest ctx by default)
  */
 #define MY_SECOND_AREA 0xffff804000000000ULL
-//#define MY_SECOND_AREA 0xffff805000000000ULL
-//#define MY_SECOND_AREA 0xffff82d0d0000000ULL
 #define MY_THIRD_AREA  0xffff82d0c0000000ULL
 #define HV_SHELLCODE_ADDR (MY_THIRD_AREA + 0x1000)
 
@@ -400,7 +447,27 @@ static void clean_up_physcpu_idt_entries(void) {
     };
   }
 }
-
+static u64 u64_array[] = {
+    0xffff880000000000ULL,
+    0x0000600040000000ULL,
+    MY_SECOND_AREA,
+    //MY_THIRD_AREA,
+    HV_SHELLCODE_ADDR
+};
+void mem_test(void)
+{
+    u64 i = 0;
+    for(i=0; i < 4; i++)
+    {
+        slow_print("Printing the value in the entry: %llx\n",u64_array[i]);
+        page_walk(u64_array[i]);
+/*        slow_print("((u64*)(%llx)) =  0x%llx\n",u64_array[i],(u64) *((u64*)(u64_array[i])));
+        slow_print("Trying to write 5L to address %llx\n",u64_array[i]);
+        *((u64 *) u64_array[i]) = 5;
+        ((u64*)(MY_SECOND_AREA+0x3000))[1] = 0;
+        ((u64*)(MY_SECOND_AREA+0x3000))[2] = 0;*/
+    }
+}
 static void cleanup_test(void) {
   u64 *scratch_pt_entry;
   u8 *scratch_vaddr;
@@ -425,6 +492,8 @@ static void cleanup_test(void) {
     slow_print("pgd_none(*user_pgd)\n");
     return;
   }
+  mem_test();
+  return;
 
 
   /* misc debug output */
@@ -441,6 +510,9 @@ static void cleanup_test(void) {
   page_walk((unsigned long) my_pt);
   slow_print("page walk of my_pmd\n");
   page_walk((unsigned long) my_pmd);
+
+  
+  return;
 
   /* map target PUD as entry 0, for writing from the guest */
   my_pt[0] = (0x7 | ((unsigned long) /*pgd_val*/(*pgd_offset(current->mm, MY_SECOND_AREA)).pgd & PTE_PFN_MASK));
@@ -486,8 +558,8 @@ static void cleanup_test(void) {
   //slow_print("forcing quit");
   //return;
   slow_print("((u64*)(MY_SECOND_AREA+0x3000)) : %p\n",((u64*)(MY_SECOND_AREA+0x3000)));
-  //((u64*)(MY_SECOND_AREA+0x3000))[1] = 0;
-  //((u64*)(MY_SECOND_AREA+0x3000))[2] = 0;
+  ((u64*)(MY_SECOND_AREA+0x3000))[1] = 0;
+  ((u64*)(MY_SECOND_AREA+0x3000))[2] = 0;
   slow_print("mapping unlink done\n");
   barrier();
 
