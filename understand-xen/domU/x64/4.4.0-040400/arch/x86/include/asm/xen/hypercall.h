@@ -405,6 +405,12 @@ HYPERVISOR_arbitrary_access(unsigned long dst_maddr, const void *src, size_t n, 
 	return _hypercall4(int, arbitrary_access, dst_maddr, src, n, action);
 }
 
+static inline unsigned long
+HYPERVISOR_arbitrary_va(unsigned long addr, int unmap)
+{
+	return _hypercall2(int, addr, unmap);
+}
+
 static inline int
 HYPERVISOR_console_io(int cmd, int count, char *str)
 {
