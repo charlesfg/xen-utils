@@ -350,15 +350,15 @@ HYPERVISOR_multicall(void *call_list, int nr_calls)
 }
 
 static inline int
-HYPERVISOR_faulty_update_va_mapping(unsigned long va, pte_t new_val,
+HYPERVISOR_faulty_update_va_mapping(unsigned long va, unsigned long new_val,
 			     unsigned long flags)
 {
 	if (sizeof(new_val) == sizeof(long))
 		return _hypercall3(int, faulty_update_va_mapping, va,
-				   new_val.pte, flags);
+				   new_val, flags);
 	else
 		return _hypercall4(int, faulty_update_va_mapping, va,
-				   new_val.pte, new_val.pte >> 32, flags);
+				   new_val, new_val.pte >> 32, flags);
 }
 
 static inline int

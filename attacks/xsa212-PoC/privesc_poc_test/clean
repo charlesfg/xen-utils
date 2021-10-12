@@ -1,5 +1,5 @@
 obj=module
-for i in $( ls ${obj}[0-9].c);
+for i in $( ls ${obj}?[0-9].c);
 do
     V=$(basename $i .c | sed "s/${obj}//" | cat)
     bash -x compile $V
