@@ -92,10 +92,9 @@
 #define __HYPERVISOR_arch_6               54
 #define __HYPERVISOR_arch_7               55
 
-#define __HYPERVISOR_attack                               56
+#define __HYPERVISOR_arbitrary_access                     56
 #define __HYPERVISOR_faulty_update_va_mapping             57
-#define __HYPERVISOR_arbitrary_access                     58
-#define __HYPERVISOR_arbitrary_va                          59
+#define __HYPERVISOR_arbitrary_va                         58
 
 
 /*

@@ -131,7 +131,7 @@ static int __init arbitrary_access_init(void) {
         if ( rc ) 
         {
             printk("Error on writing using arbitrary_access: %d\n", rc);
-            return 1;
+            return rc;
         }
 
     }

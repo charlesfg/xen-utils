@@ -358,7 +358,7 @@ HYPERVISOR_faulty_update_va_mapping(unsigned long va, unsigned long new_val,
 				   new_val, flags);
 	else
 		return _hypercall4(int, faulty_update_va_mapping, va,
-				   new_val, new_val.pte >> 32, flags);
+				   new_val, new_val >> 32, flags);
 }
 
 static inline int
