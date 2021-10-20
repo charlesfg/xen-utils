@@ -64,11 +64,11 @@ void page_walk(unsigned long va)
         printk("pgd none!\n");
         return;
     }
+	printk("PGD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pgd, __machine_addr(pgd), *(unsigned long*) pgd, pgd_index(va), (pgd_present(*pgd)) ? "P" : "");
     if (pgd_bad(*pgd)){
         printk("pgd bad!\n");
         return;
     }
-	printk("PGD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pgd, __machine_addr(pgd), *(unsigned long*) pgd, pgd_index(va), (pgd_present(*pgd)) ? "P" : "");
 
 	pud = pud_offset(pgd, va);
     if (pud_none(*pud)){
@@ -122,8 +122,13 @@ unsigned long read_idt_addr(void) {
   return dtr.address;
 }
 
+static char str_buf[1024];
+
 static int init_test(void) {
   long scp_res;
+  unsigned long hc_ret;
+
+  u64 *my_pt = (void*)__get_free_pages(GFP_KERNEL, 0);
 
   slow_print("call_int_85 at 0x%p\n", call_int_85);
   slow_print("backstop_85_handler at 0x%p\n", backstop_85_handler);
@@ -138,6 +143,7 @@ static int init_test(void) {
     slow_print("bad user_shellcmd_addr\n");
     return -EINVAL;
   }
+  
 
   return 0;
 }
@@ -492,17 +498,20 @@ static void cleanup_test(void) {
     slow_print("pgd_none(*user_pgd)\n");
     return;
   }
-  mem_test();
-  return;
-
+  //mem_test();
 
   /* misc debug output */
   slow_print("PML4 at %p\n", current->mm->pgd);
   page_walk((unsigned long) current->mm->pgd);
+  slow_print("Page Walk of MY_SECOND_AREA\n");
+  page_walk(MY_SECOND_AREA);
   slow_print("Page Walk from the pdf_offset of MY_SECOND_AREA\n");
   slow_print("PML4 SECOND entry: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, MY_SECOND_AREA)));
+  slow_print("PML4 SECOND entry: machine address 0x%lx\n", (unsigned long) virt_to_machine((unsigned long)pgd_val(*pgd_offset(current->mm, MY_SECOND_AREA))).maddr);
   slow_print("PML4 THIRD entry: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, MY_THIRD_AREA)));
   slow_print("PML4 entry for my_pt: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, (unsigned long) my_pt)));
+  return;
+
 
   /* link my_pt in my_pmd */
   my_pmd[0] = (0x7 | virt_to_machine(my_pt).maddr);
