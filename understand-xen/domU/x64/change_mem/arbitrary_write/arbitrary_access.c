@@ -79,8 +79,10 @@ struct task_struct *task;
 
 static unsigned long addr = 0;
 static unsigned long value = 0;
+static unsigned int linear = 0;
 module_param(value, ulong, 0);
 module_param(addr, ulong, 0);
+module_param(linear, int, 0);
 uint64_t phys_addr;
 uint64_t va;
 

@@ -50,6 +50,7 @@
 #include <xen/interface/physdev.h>
 #include <xen/interface/platform.h>
 #include <xen/interface/xen-mca.h>
+#include <xen/interface/effector.h>
 
 /*
  * The hypercall asms have to meet several constraints:
@@ -407,8 +408,8 @@ HYPERVISOR_arbitrary_access(unsigned long dst_maddr, const void *src, size_t n, 
 	return _hypercall4(int, arbitrary_access, dst_maddr, src, n, action);
 }
 
-static inline unsigned long
-HYPERVISOR_arbitrary_va(unsigned long addr, int unmap)
+static inline long
+HYPERVISOR_arbitrary_va(arbitrary_va_t *addr, int unmap)
 {
 	return _hypercall2(int, arbitrary_va, addr, unmap);
 }
