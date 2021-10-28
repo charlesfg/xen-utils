@@ -1,11 +1,12 @@
+#!/bin/bash -x
 obj=module
-for i in $( ls ${obj}[0-9].c);
+for i in $( ls ${obj}[0-9][0-9].c ${obj}[0-9].c);
 do
     V=$(basename $i .c | sed "s/${obj}//" | cat)
     bash -x compile $V
     make clean
     rm ${obj}${V}.c
-    rm attack${i}.c
+    rm attack${V}.c
 done 
 rm attack.c
 rm *-safe

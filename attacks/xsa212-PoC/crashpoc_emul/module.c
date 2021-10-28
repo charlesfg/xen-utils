@@ -83,7 +83,8 @@ static void cleanup_test(void) {
           sizeof(int),
           ARBITRARY_WRITE_LINEAR
   );
-  pr_warn("hypercall returns 0x%lx\n", ret);
+  pr_warn("hypercall returns %ld\n", ret);
+  return;
 }
 
 module_init(init_test);
