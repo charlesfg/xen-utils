@@ -76,6 +76,30 @@ int virt_to_phys_user(uintptr_t *paddr, pid_t pid, uintptr_t vaddr)
 int main(int argc, char **argv)
 {
     pid_t pid;
+    uintptr_t vaddr, vaddr2, paddr = 0, paddr2 = 0;
+
+    if (argc < 4) {
+        printf("Usage: %s pid vaddr1 vaddr2\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+    pid = strtoull(argv[1], NULL, 0);
+    vaddr = strtoull(argv[2], NULL, 0);
+    vaddr2 = strtoull(argv[3], NULL, 0);
+    if (virt_to_phys_user(&paddr, pid, vaddr)) {
+        fprintf(stderr, "error: virt_to_phys_user !vaddr\n");
+        return EXIT_FAILURE;
+    };
+    if (virt_to_phys_user(&paddr2, pid, vaddr2)) {
+        fprintf(stderr, "error: virt_to_phys_user !vaddr2\n");
+        return EXIT_FAILURE;
+    };
+    printf("0x%jx 0x%jx\n", (uintmax_t)paddr, (uintmax_t)paddr2);
+    return EXIT_SUCCESS;
+}
+/*
+int main(int argc, char **argv)
+{
+    pid_t pid;
     uintptr_t vaddr, paddr = 0;
 
     if (argc < 3) {
@@ -92,3 +116,4 @@ int main(int argc, char **argv)
     printf("0x%jx\n", (uintmax_t)paddr);
     return EXIT_SUCCESS;
 }
+*/
