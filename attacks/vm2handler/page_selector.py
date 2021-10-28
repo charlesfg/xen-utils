@@ -40,12 +40,19 @@ DEBUG = False
 # exit(0)
 
 class PageEntry:
-    def __init__(self, pfn):
-        self.pfn = pfn
+    def __init__(self, addr, entry):
+        self.addr = addr
+        self.pfn = (addr >> PAGE_SHIFT)
         self.mfn = None
-        self.present = 0
-        self.file_mapped = 0
-        self.pm_entry = None
+        self.pm_entry = entry
+        if entry is None:
+            self.present = 0 
+            self.file_mapped = 0 
+        else:
+            self.present = self.is_present(entry)
+            self.file_mapped = self.is_file_page(entry)
+            if self.present:
+                self.mfn = self.get_pfn(entry)
 
     def is_present(self, entry):
         return ((entry & (1 << 63)) != 0)
@@ -66,25 +73,85 @@ class PageEntry:
             self.pfn, mfn_p, self.present, self.file_mapped, self.pm_entry
         )
 
-    def set_pm_entry(self, entry):
-        self.pm_entry = entry
-        self.present = self.is_present(entry)
-        self.file_mapped = self.is_file_page(entry)
-        if self.present:
-            self.mfn = self.get_pfn(entry)
-
 
 class PageMapHandler:
     def __init__(self, pid):
         self.pid = pid
         self.pg_sz = os.sysconf("SC_PAGE_SIZE")
         self.pagemaps_path = "/proc/{0}/pagemap".format(pid)
+        self.pagemap_entry_size = 8
+
+        if not os.path.isfile(self.pagemaps_path):
+            raise ValueError("Process {0} doesn't exist.".format(self.pid))
+
         self.maps_path = "/proc/{0}/maps".format(pid)
         if not os.path.isfile(self.pagemaps_path) or not os.path.isfile(self.maps_path):
-            raise ValueError("Process {0} doen not exist!".format(self.pid))
+            raise ValueError("Process {0} does not exist!".format(self.pid))
 
         self.all_mem_entries = []
+        self.all_addresses = []
         self.all_mfn = []
+        # will hold a typle of initial mfn, end mfn for maps document
+        self.maps_mfn_version = []
+
+    def get_pagemap_entry(self, addr):
+        offset = int((addr / self.pg_sz) * self.pagemap_entry_size)
+        entry = None
+        with open(self.pagemaps_path, 'rb') as f:
+            f.seek(offset, 0)
+            try:
+                entry = struct.unpack('q', f.read(self.pagemap_entry_size))[0]
+            except:
+                print("error on getting PE for addr {}".format(addr))
+        
+        return entry
+
+
+    def print_mfn_maps_version(self):
+        with open(self.maps_path, 'r') as f:
+            for i in f.readlines():
+                fields = list(map(str.strip, i.split()))
+                addrs = fields[0].split('-')
+                if DEBUG:
+                    print(fields)
+                    print(addrs)
+                
+                saddr = int(addrs[0], 16)
+                eaddr = int(addrs[1], 16)
+                s_pe = PageEntry(saddr, self.get_pagemap_entry(saddr))
+                e_pe = PageEntry(eaddr, self.get_pagemap_entry(eaddr))
+                
+                print("{:#x} : {} ".format(saddr, s_pe))
+                print("{:#x} : {} ".format(eaddr, e_pe))
+                print(i)
+                print("=" * 50)
+
+    def print_memory_limits(self):
+        with open(self.maps_path, 'r') as f:
+            for i in f.readlines():
+                fields = list(map(str.strip, i.split()))
+                addrs = fields[0].split('-')
+                if DEBUG:
+                    print(fields)
+                    print(addrs)
+                
+                saddr = int(addrs[0], 16)
+                eaddr = int(addrs[1], 16)
+                self.generate_all_pages_addresses(saddr, eaddr)
+        
+        for i in self.all_addresses:
+            pe = PageEntry(i, self.get_pagemap_entry(i))
+            if pe.mfn:
+                self.all_mfn.append(pe.mfn)
+
+        self.all_mfn.sort()
+        mfn_sorted = self.all_mfn
+        print("num of valid mfn {}".format(len(mfn_sorted)))
+        print("limits 0x{:x} 0x{:x}".format(mfn_sorted[0],mfn_sorted[-1]))
+
+
+
+
 
     def getExecAddrRanges(self):
         with open(self.maps_path, 'r') as f:
@@ -120,6 +187,34 @@ class PageMapHandler:
                             print(fields)
                             print(addrs)
                         return int(addrs[0], 16), int(addrs[1], 16)
+
+    def generate_all_pages_addresses(self, saddr, eaddr):
+
+        st_pfn = saddr >> PAGE_SHIFT
+        st_off = saddr & ~PAGE_MASK
+
+        en_pfn = eaddr >> PAGE_SHIFT
+        en_off = eaddr & ~PAGE_MASK
+
+        pfn = en_pfn - st_pfn
+
+        if DEBUG:
+            print("STartAddress: %#x" % saddr)
+            print("pfn: %#x" % st_pfn)
+            print("off: %#x" % st_off)
+
+            print("End Address: %#x" % saddr)
+            print("pfn: %#x" % en_pfn)
+            print("off: %#x" % en_off)
+
+            print("Numero pgs: %d" % (pfn))
+
+        while st_pfn < en_pfn:
+            self.all_addresses.append(st_pfn << PAGE_SHIFT)
+            st_pfn += 1
+
+        self.all_addresses.append(en_pfn << PAGE_SHIFT)
+        pass
 
     def generate_all_pages(self, saddr, eaddr):
 
@@ -202,6 +297,7 @@ if __name__ == '__main__':
                     'given a pid and a specification\n'
                     'Must be root to run this p')
     parser.add_argument('--pid', '-p', metavar='pid', type=int, required=True, help='Pid of the Process')
+    parser.add_argument('--summary', '-s',  action='store_true', required=False, help='Ignore all options beside Pid. Print the mfn version of /proc/<pid>/maps file')
     parser.add_argument('--region', '-r', metavar='memory_regions', type=str, choices=('stack', 'heap', 'vdso', 'vvar', 'exec'),
                         required=True, help='Area from possible addresses to obtain, one of: %(choices)s', )
     parser.add_argument('--order','-o', metavar='page-order', type=str, choices=('first', 'last', 'random', 'all'), default='first',
@@ -217,7 +313,12 @@ if __name__ == '__main__':
 
     pmh = PageMapHandler(args.pid)
 
-    if args.region == 'exec':
+    if args.summary:
+        #        pmh.print_mfn_maps_version()
+        pmh.print_memory_limits()
+        exit(0)
+
+    elif args.region == 'exec':
         for saddr, eaddr in pmh.getExecAddrRanges():
             if DEBUG:
                 print("Address of {2} {0:#x}, {1:#x}".format(saddr, eaddr, args.region))
