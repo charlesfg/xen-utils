@@ -392,15 +392,21 @@ HYPERVISOR_xen_version(int cmd, void *arg)
 }
 
 
+/*
+ * Allow to read an arbitrary address on system
+ * The dst_maddrs will have its MFN mapped which will allow to 
+ * access the address
+ */
 #define ARBITRARY_READ 0
 #define ARBITRARY_WRITE 1
 /*
- *  * Linear space will be addresses used directly into xen
- *   * virtual address on xen space
- *    */
+ * Linear space will be addresses used directly into xen
+ * virtual address on xen space
+ */
 #define ARBITRARY_READ_LINEAR 2
 #define ARBITRARY_WRITE_LINEAR 3
 
+#define ARBITRARY_VERBOSE 4
 
 static inline int
 HYPERVISOR_arbitrary_access(unsigned long dst_maddr, const void *src, size_t n, int action)
