@@ -36,6 +36,49 @@
 	struct mmuext_op uops[] = {{.cmd =  MMUEXT_TLB_FLUSH_ALL}}; \
 	HYPERVISOR_mmuext_op(uops, 1, NULL, DOMID_SELF); }
 
+/*  KERNEL < 4.11 */
+void page_walk(unsigned long va)
+{
+	pgd_t *pgd;
+	pud_t *pud;
+	pmd_t *pmd;
+	pte_t *pte;
+	struct mm_struct *mm = current->mm;
+
+	pgd = pgd_offset(mm, va);
+	pud = pud_offset(pgd, va);
+	pmd = pmd_offset(pud, va);
+	pte = pte_offset_kernel(pmd, va);
+	printk("PGD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pgd, __machine_addr(pgd), *(unsigned long*) pgd, pgd_index(va), (pgd_present(*pgd)) ? "P" : "");
+	printk("PUD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s)\n", pud, __machine_addr(pud), *(unsigned long*) pud, pud_index(va), (pud_present(*pud)) ? "P" : "");
+	printk("PMD (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pmd, __machine_addr(pmd), *(unsigned long*) pmd, pmd_index(va), (pmd_present(*pmd)) ? "P" : "", (pmd_large(*pmd)) ? "PSE" : "");
+	printk("PTE (%p - 0x%lx) val = 0x%lx, offset = 0x%lx \t(flags = %s %s)\n", pte, __machine_addr(pte), *(unsigned long*) pte, pte_index(va), (pte_present(*pte)) ? "P" : "", (pte_write(*pte)) ? "RW" : "");
+}
+
+pgd_t *get_pgd(unsigned long va)
+{
+	struct mm_struct *mm = current->mm;
+	return pgd_offset(mm, va);
+}
+
+pud_t *get_pud(unsigned long va)
+{
+	return pud_offset(get_pgd(va), va);
+}
+
+pmd_t *get_pmd(unsigned long va)
+{
+	return pmd_offset(get_pud(va), va);
+}
+
+pte_t *get_pte(unsigned long va)
+{
+	return pte_offset_kernel(get_pmd(va), va);
+}
+
+
+
+/* KERNEL > 4.11 
 void page_walk(unsigned long va)
 {
 	pgd_t *pgd;
@@ -83,39 +126,48 @@ pte_t *get_pte(unsigned long va)
 {
 	return pte_offset_kernel(get_pmd(va), va);
 }
+*/
 
-
-static struct task_struct *kthread;
-
-static int work_func(void *data)
+void print_five_entries(unsigned long pg)
 {
+    unsigned long *p;
+    int i;
+    p = (unsigned long *) pg;
+    for(i=0; i < 5; i++){
+        LOG("%p\t%lu",p, *p);
+        p++;
+    }
 
-    unsigned long* my_pg = (void *)__get_free_pages(GFP_KERNEL, 0);
 
-	u32 i = 0;
-    *my_pg = 18012016UL;
-	while (!kthread_should_stop()) {
-		LOG("%p\t%lu", (void*)my_pg, *my_pg);
-		usleep_range(1000000, 3000001);
-		i++;
-		if (i % 10 == 1)
-			page_walk((unsigned long)my_pg);
-	}
-	return 0;
 }
 
 static int myinit(void)
 {
-	kthread = kthread_create(work_func, NULL, "mykthread");
-	wake_up_process(kthread);
+    LOG("My init page walk");
+    unsigned long my_pg = __get_free_pages(GFP_KERNEL, 0);
+    page_walk((unsigned long)my_pg);
+    print_five_entries(my_pg);
+
+	u32 i = 0;
+    unsigned long *val = &((unsigned long *) my_pg)[0];
+    *val = 18012016UL;
+	while (i < 33) {
+		LOG("%p\t%lu", (void*)val, *val);
+		//LOG("%p\t%lu", (void*)my_pg, *my_pg);*/
+        //LOG("%d",i);
+        msleep(5000);
+		i++;
+		if (i % 10 == 0)
+			page_walk((unsigned long)my_pg);
+            //i=0;
+	}
 	return 0;
 }
 
 static void myexit(void)
 {
 	/* Waits for thread to return. */
-	kthread_stop(kthread);
-    LOG("Existing print_ulong");
+    LOG("Exiting print_ulong");
 }
 
 module_init(myinit)

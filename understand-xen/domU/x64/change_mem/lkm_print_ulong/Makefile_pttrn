@@ -13,4 +13,9 @@ clean:
 
 run: all
 	dmesg -C && insmod print_ulong_XXX.ko addr=$(ADDRESS) value=$(VALUE) && rmmod print_ulong_XXX && dmesg
-  
+ 
+load: 
+	dmesg -C && insmod print_ulong_XXX.ko 
+
+unload:
+	rmmod print_ulong_XXX && dmesg
