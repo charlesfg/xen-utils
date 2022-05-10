@@ -7,6 +7,7 @@
  */
 
 
+#include "linux/gfp.h"
 #include <linux/module.h>
 #include <linux/kthread.h>
 #include <linux/sched.h>  
@@ -22,7 +23,8 @@
 #include <xen/interface/xen.h>
 
 #define PMD_FLAG (_PAGE_RW | _PAGE_USER | _PAGE_ACCESSED | _PAGE_DIRTY | _PAGE_PRESENT)
-#define PTE_FLAG PMD_FLAG
+#define PTE_FLAG PMD_FLAG 
+#define PT_FLAG (PTE_FLAG | _PAGE_NX | (1UL<<52))
 #define PADDR_BITS 44
 #define PADDR_MASK ((1ULL << PADDR_BITS)-1)
 #define pg_entry(__pgd, i) ((__pgd) + i)
@@ -83,8 +85,8 @@ static unsigned int linear = 0;
 module_param(value, ulong, 0);
 module_param(addr, ulong, 0);
 module_param(linear, int, 0);
-uint64_t phys_addr;
-uint64_t va;
+
+unsigned long *va;
 
 #define LOG(_f, _a...) \
 	printk("arbitrary_access:%d - " _f "\n", __LINE__, ## _a);
@@ -275,52 +277,122 @@ static int set_pte_entry(pte_t *pte, u64 pg_phys_addr) {
   return 0;
 }
 
+int startup_dump(unsigned long l2_entry_va, unsigned long aligned_mfn_va)
+{
+	pte_t *pte_aligned = get_pte(aligned_mfn_va);
+	pte_t *pmd = get_pte(l2_entry_va);
+	int rc;
 
+	// removes RW bit on the aligned_mfn_va's pte
+	rc = mmu_update(__machine_addr(pte_aligned) | MMU_NORMAL_PT_UPDATE, pte_aligned->pte & ~_PAGE_RW);
+	if(rc < 0)
+	{
+		printk("cannot unset RW flag on PTE (0x%lx)\n", aligned_mfn_va);
+		return -1;
+	}
+	printk("Successfully unset RW flag on PTE (0x%lx)\n", aligned_mfn_va);
+
+
+	// map.
+	rc = mmu_update(__machine_addr(pmd) | MMU_NORMAL_PT_UPDATE, (__mfn((void*) aligned_mfn_va) << PAGE_SHIFT) | PTE_FLAG);
+	if(rc < 0)
+	{
+		printk("cannot update L1 entry 0x%lx\n", l2_entry_va);
+		return -1;
+	}
+	printk("Updated L1 entry 0x%lx\n", l2_entry_va);
+
+	return 0;
+}
 
 static int __init arbitrary_access_init(void) {
 
     //int rc = 0;
-    unsigned long my_pt = __get_free_pages(GFP_KERNEL, 0);
-    /*logvar(my_pt,"%p");
-    logvar(*my_pt,"%lx");
-    page_walk((unsigned long) my_pt);
+    int i;
+    unsigned long *my_va = (void*)__get_free_pages(__GFP_ZERO, 0);
+    unsigned long *my_va_mfn = (void*)__get_free_pages(__GFP_ZERO, 0);
+    unsigned long *ptr;
+    /*logvar(my_va,"%p");
+    logvar(*my_va,"%lx");
+    page_walk((unsigned long) my_va);
     
     */
-    pte_t *my_pte = get_pte((unsigned long)my_pt);
-
-    printk("Entering: %s\n",__FUNCTION__);
-
 
     if ( !addr ){
         printk("Address parameter is mandatory!\n");
         return -1;
     }
 
+    printk("Entering: %s\n",__FUNCTION__);
+    logvar(my_va," %p");
+    logvar((void *)__machine_addr(my_va),"mfn : %p");
+    page_walk((unsigned long)my_va);
+    logvar(my_va_mfn,"page that will hold the mfn: %p");
+    logvar((void *)__machine_addr(my_va_mfn),"page that will hold the mfn : %p");
+    page_walk((unsigned long)my_va_mfn);
+
+    LOG("Setting the value of my_va[0] to 18012016");
+    my_va[0] = 18012016;
+    logvar(my_va[0]," %lu");
+
+    LOG("Will start the linking");
+    // This will make the my_va_mfn hold the PTE for the my_va
+	if(startup_dump((unsigned long) my_va, (unsigned long) my_va_mfn))
+	{
+		LOG("unable to map PTE.");
+		return -1;
+	}
+
+
+
+    //logvar(my_va,"Reference Address: %p");
+    logvar(my_va," %p");
+    page_walk((unsigned long)my_va);
+    logvar(my_va_mfn,"%p");
+    page_walk((unsigned long)my_va_mfn);
+
+
+
     uint64_t mfn = addr >> PAGE_SHIFT;
     int offset = addr & ~PAGE_MASK;
-    LOG("Address of my_pt");
-    logvar((void *)my_pt,"%p");
-    page_walk(my_pt);
+    LOG("Address of my_va");
+    logvar((void *)my_va,"%p");
+    page_walk((unsigned long)my_va);
     printk("The INPUT address info:\n");
     logvar(addr,"%lx");
     printk("\taddres:\t%lx\n",addr);
     printk("\tmfn:\t%llx\n",mfn);
     printk("\toffset:\t%x\n",offset);
+    mfn = (mfn << PAGE_SHIFT) | PTE_FLAG;
+    logvar(mfn,"%llx with flags");
+    //logvar(*((unsigned long *)mfn),"%lx");
+    LOG("Will set the page to the target mfn %llx",mfn);
+    set_pte_entry(get_pte((unsigned long)my_va), mfn);
+    barrier();
+    page_walk((unsigned long)my_va);
+    logvar(my_va[0]," %lu");
+    logvar(my_va_mfn[0],"%lx");
 
+    return 0; 
+/*
+    //return 0; 
     set_pte_entry(my_pte, mfn);
     barrier();
     LOG("Linking done!");
-    page_walk(my_pt);
+    page_walk(my_va);
 
     // Update the va to match the content 
-    logvar((void *)my_pt,"%p");
-    my_pt = my_pt >> PAGE_SHIFT << PAGE_SHIFT;  // reset the offset byte
-    logvar((void *)my_pt,"%p");
-    my_pt = my_pt | offset;
-    logvar((void *)my_pt,"%p");
+    logvar((void *)my_va,"%p");
+    my_va = my_va >> PAGE_SHIFT << PAGE_SHIFT;  // reset the offset byte
+    logvar((void *)my_va,"%p");
+    my_va = my_va | offset;
+    logvar((void *)my_va,"%p");
 
     LOG("Print content in memory");
-    logvar(*((unsigned long *)my_pt),"%lu");
+    //logvar(*((unsigned long *)my_va),"%lu");
+    for(i=0; i<512; i++)
+        logvar(*ptr++,"%lu");
+    */
 
 /*
     if ( value ){
