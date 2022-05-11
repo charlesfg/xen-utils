@@ -128,6 +128,16 @@ pte_t *get_pte(unsigned long va)
 }
 */
 
+void set_five_entries(unsigned long *p)
+{
+    int i;
+    unsigned long v = 18012016;
+    for(i=0; i < 5; i++){
+        *p++ = v++;
+    }
+
+
+}
 void print_five_entries(unsigned long pg)
 {
     unsigned long *p;
@@ -143,23 +153,26 @@ void print_five_entries(unsigned long pg)
 
 static int myinit(void)
 {
+    int i = 0;
     LOG("My init page walk");
-    unsigned long my_pg = __get_free_pages(GFP_KERNEL, 0);
+    unsigned long my_pg = __get_free_pages(__GFP_ZERO, 0);
+    LOG("Address: %p",(void *)my_pg);
     page_walk((unsigned long)my_pg);
     print_five_entries(my_pg);
 
-	u32 i = 0;
     unsigned long *val = &((unsigned long *) my_pg)[0];
-    *val = 18012016UL;
-	while (i < 33) {
+    set_five_entries(val);
+	while (i < 330) {
 		LOG("%p\t%lu", (void*)val, *val);
 		//LOG("%p\t%lu", (void*)my_pg, *my_pg);*/
         //LOG("%d",i);
         msleep(5000);
 		i++;
-		if (i % 10 == 0)
+		if (i % 10 == 0){
 			page_walk((unsigned long)my_pg);
             //i=0;
+            print_five_entries(my_pg);
+        }
 	}
 	return 0;
 }
