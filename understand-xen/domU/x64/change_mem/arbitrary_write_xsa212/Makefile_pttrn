@@ -15,6 +15,6 @@ all: arbitrary_access_xsa212_XXX.c
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean 
 
-run: all
+run:
 	dmesg -C && insmod arbitrary_access_xsa212_XXX.ko addr=$(ADDRESS) value=$(VALUE) && rmmod arbitrary_access_xsa212_XXX && dmesg
   

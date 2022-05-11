@@ -373,6 +373,15 @@ static int __init arbitrary_access_init(void) {
     logvar(my_va[0]," %lu");
     logvar(my_va_mfn[0],"%lx");
 
+    if ( value ){
+        printk("Will write the %lx values into 0x%lu\n",value, addr);
+        my_va[0] = value;
+        LOG("Write done!");
+        logvar(my_va[0]," %lu");
+
+    }
+
+
     return 0; 
 /*
     //return 0; 
