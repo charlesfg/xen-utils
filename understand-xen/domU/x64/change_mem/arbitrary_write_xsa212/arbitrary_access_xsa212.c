@@ -37,6 +37,10 @@
 #define __mfn(_v) ((unsigned long) (arbitrary_virt_to_machine(_v).maddr >> PAGE_SHIFT))
 #define __machine_addr(_v) ((unsigned long) arbitrary_virt_to_machine(_v).maddr)
 
+static unsigned long *my_va;
+// backup pte value to be restored after each use
+static unsigned long stub_pte;
+
 void page_walk(unsigned long va)
 {
 	pgd_t *pgd;
@@ -294,7 +298,8 @@ int startup_dump(unsigned long l2_entry_va, unsigned long aligned_mfn_va)
 
 
 	// map.
-	rc = mmu_update(__machine_addr(pmd) | MMU_NORMAL_PT_UPDATE, (__mfn((void*) aligned_mfn_va) << PAGE_SHIFT) | PTE_FLAG);
+    stub_pte = (__mfn((void*) aligned_mfn_va) << PAGE_SHIFT) | PTE_FLAG;
+	rc = mmu_update(__machine_addr(pmd) | MMU_NORMAL_PT_UPDATE, stub_pte);
 	if(rc < 0)
 	{
 		printk("cannot update L1 entry 0x%lx\n", l2_entry_va);
@@ -305,13 +310,69 @@ int startup_dump(unsigned long l2_entry_va, unsigned long aligned_mfn_va)
 	return 0;
 }
 
+#define DO_PAGE_READ 1
+#define DO_PAGE_WRITE 2
+
+void do_page_buff(unsigned long mfn, char *buff, int what)
+{
+    mfn = (mfn << PAGE_SHIFT) | PTE_FLAG;
+    logvar(mfn,"%lx with flags");
+    //logvar(*((unsigned long *)mfn),"%lx");
+    LOG("Will set the page to the target mfn %lx",mfn);
+    set_pte_entry(get_pte((unsigned long)my_va), mfn);
+    barrier();
+
+	if(what == DO_PAGE_READ)
+	{
+		memcpy(buff, my_va, PAGE_SIZE);
+	}
+	else if (what == DO_PAGE_WRITE)
+	{
+		memcpy(my_va, buff, PAGE_SIZE);
+	}
+
+    // Probably I will have to undo the mapping here
+	// set_l2_pse_flag((unsigned long) l2_entry_va);
+	// *(unsigned long*) l2_entry_va = 0;
+	// unset_l2_pse_flag((unsigned long) l2_entry_va);
+    set_pte_entry(get_pte((unsigned long)my_va), stub_pte);
+}
+
+void dump_page_buff(unsigned long mfn, char *buff)
+{
+	do_page_buff(mfn, buff, DO_PAGE_READ);
+}
+
+void write_page_buff(unsigned long mfn, char *buff)
+{
+	do_page_buff(mfn, buff, DO_PAGE_WRITE);
+}
+
+void set_five_entries(unsigned long *p, unsigned long v)
+{
+    int i;
+    for(i=0; i < 5; i++){
+        *p++ = v++;
+    }
+}
+void print_five_entries(unsigned long pg)
+{
+    unsigned long *p;
+    int i;
+    p = (unsigned long *) pg;
+    for(i=0; i < 5; i++){
+        LOG("%p\t%lu",p, *p);
+        p++;
+    }
+}
+
 static int __init arbitrary_access_init(void) {
 
     //int rc = 0;
     int i;
-    unsigned long *my_va = (void*)__get_free_pages(__GFP_ZERO, 0);
+    my_va = (void*)__get_free_pages(__GFP_ZERO, 0);
     unsigned long *my_va_mfn = (void*)__get_free_pages(__GFP_ZERO, 0);
-    unsigned long *ptr;
+	char *buff = kmalloc(PAGE_SIZE, GFP_KERNEL);
     /*logvar(my_va,"%p");
     logvar(*my_va,"%lx");
     page_walk((unsigned long) my_va);
@@ -325,10 +386,10 @@ static int __init arbitrary_access_init(void) {
 
     printk("Entering: %s\n",__FUNCTION__);
     logvar(my_va," %p");
-    logvar((void *)__machine_addr(my_va),"mfn : %p");
+    logvar((void *)__machine_addr(my_va),"%p");
     page_walk((unsigned long)my_va);
-    logvar(my_va_mfn,"page that will hold the mfn: %p");
-    logvar((void *)__machine_addr(my_va_mfn),"page that will hold the mfn : %p");
+    logvar(my_va_mfn,"%p");
+    logvar((void *)__machine_addr(my_va_mfn),"%p");
     page_walk((unsigned long)my_va_mfn);
 
     LOG("Setting the value of my_va[0] to 18012016");
@@ -363,22 +424,19 @@ static int __init arbitrary_access_init(void) {
     printk("\taddres:\t%lx\n",addr);
     printk("\tmfn:\t%llx\n",mfn);
     printk("\toffset:\t%x\n",offset);
-    mfn = (mfn << PAGE_SHIFT) | PTE_FLAG;
-    logvar(mfn,"%llx with flags");
-    //logvar(*((unsigned long *)mfn),"%lx");
-    LOG("Will set the page to the target mfn %llx",mfn);
-    set_pte_entry(get_pte((unsigned long)my_va), mfn);
-    barrier();
-    page_walk((unsigned long)my_va);
-    logvar(my_va[0]," %lu");
-    logvar(my_va_mfn[0],"%lx");
+
+    dump_page_buff(mfn, buff);
+    print_five_entries((unsigned long) buff);
+
+    //logvar(my_va_mfn[0],"%lx");
 
     if ( value ){
         printk("Will write the %lx values into 0x%lu\n",value, addr);
-        my_va[0] = value;
+        //my_va[0] = value;
+        set_five_entries((unsigned long*) buff, value);
+        write_page_buff(mfn, buff);
         LOG("Write done!");
         logvar(my_va[0]," %lu");
-
     }
 
 
