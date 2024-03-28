@@ -1,0 +1,108 @@
+X-Git-Url: http://xenbits.xen.org/gitweb/?p=qemu-xen-traditional.git;a=blobdiff_plain;f=vnc.c;h=61d1555204ab6920d97a4c050674d93a4a1fb637;hp=573af3be053a5f2fb2a5c947c0e403b6688f6d61;hb=df553c056104e3dd8a2bd2e72539a57c4c085bae;hpb=e4ceb77cf88bc44f0b7fe39225c49d660735f327
+
+diff --git a/vnc.c b/vnc.c
+index 573af3be..61d15552 100644
+--- a/vnc.c
++++ b/vnc.c
+@@ -1925,9 +1925,9 @@ static int vnc_tls_initialize(void)
+     return 1;
+ }
+ 
+-static gnutls_anon_server_credentials vnc_tls_initialize_anon_cred(void)
++static gnutls_anon_server_credentials_t vnc_tls_initialize_anon_cred(void)
+ {
+-    gnutls_anon_server_credentials anon_cred;
++    gnutls_anon_server_credentials_t anon_cred;
+     int ret;
+ 
+     if ((ret = gnutls_anon_allocate_server_credentials(&anon_cred)) < 0) {
+@@ -2151,13 +2151,52 @@ static void vnc_handshake_io(void *opaque) {
+      (vs)->subauth == VNC_AUTH_VENCRYPT_X509VNC ||    \
+      (vs)->subauth == VNC_AUTH_VENCRYPT_X509PLAIN)
+ 
++#if defined(GNUTLS_VERSION_NUMBER) && \
++    GNUTLS_VERSION_NUMBER >= 0x020200 /* 2.2.0 */
++static int vnc_set_gnutls_priority(gnutls_session_t s, int x509)
++{
++    const char *priority = x509 ? "NORMAL" : "NORMAL:+ANON-DH";
++    int rc;
+ 
+-static int vnc_start_tls(struct VncState *vs) {
+-    static const int cert_type_priority[] = { GNUTLS_CRT_X509, 0 };
+-    static const int protocol_priority[]= { GNUTLS_TLS1_1, GNUTLS_TLS1_0, GNUTLS_SSL3, 0 };
+-    static const int kx_anon[] = {GNUTLS_KX_ANON_DH, 0};
+-    static const int kx_x509[] = {GNUTLS_KX_DHE_DSS, GNUTLS_KX_RSA, GNUTLS_KX_DHE_RSA, GNUTLS_KX_SRP, 0};
++    rc = gnutls_priority_set_direct(s, priority, NULL);
++    if (rc != GNUTLS_E_SUCCESS) {
++        return -1;
++    }
++    return 0;
++}
++#else
++static int vnc_set_gnutls_priority(gnutls_session_t s, int x509)
++{
++    static const int cert_types[] = { GNUTLS_CRT_X509, 0 };
++    static const int protocols[] = {
++        GNUTLS_TLS1_1, GNUTLS_TLS1_0, GNUTLS_SSL3, 0
++    };
++    static const int kx_anon[] = { GNUTLS_KX_ANON_DH, 0 };
++    static const int kx_x509[] = {
++        GNUTLS_KX_DHE_DSS, GNUTLS_KX_RSA,
++        GNUTLS_KX_DHE_RSA, GNUTLS_KX_SRP, 0
++    };
++    int rc;
++
++    rc = gnutls_kx_set_priority(s, x509 ? kx_x509 : kx_anon);
++    if (rc != GNUTLS_E_SUCCESS) {
++        return -1;
++    }
++
++    rc = gnutls_certificate_type_set_priority(s, cert_types);
++    if (rc != GNUTLS_E_SUCCESS) {
++        return -1;
++    }
+ 
++    rc = gnutls_protocol_set_priority(s, protocols);
++    if (rc != GNUTLS_E_SUCCESS) {
++        return -1;
++    }
++    return 0;
++}
++#endif
++
++static int vnc_start_tls(struct VncState *vs) {
+     VNC_DEBUG("Do TLS setup\n");
+     if (vnc_tls_initialize() < 0) {
+ 	VNC_DEBUG("Failed to init TLS\n");
+@@ -2177,21 +2216,7 @@ static int vnc_start_tls(struct VncState *vs) {
+ 	    return -1;
+ 	}
+ 
+-	if (gnutls_kx_set_priority(vs->tls_session, NEED_X509_AUTH(vs) ? kx_x509 : kx_anon) < 0) {
+-	    gnutls_deinit(vs->tls_session);
+-	    vs->tls_session = NULL;
+-	    vnc_client_error(vs);
+-	    return -1;
+-	}
+-
+-	if (gnutls_certificate_type_set_priority(vs->tls_session, cert_type_priority) < 0) {
+-	    gnutls_deinit(vs->tls_session);
+-	    vs->tls_session = NULL;
+-	    vnc_client_error(vs);
+-	    return -1;
+-	}
+-
+-	if (gnutls_protocol_set_priority(vs->tls_session, protocol_priority) < 0) {
++	if (vnc_set_gnutls_priority(vs->tls_session, !!NEED_X509_AUTH(vs)) < 0) {
+ 	    gnutls_deinit(vs->tls_session);
+ 	    vs->tls_session = NULL;
+ 	    vnc_client_error(vs);
+@@ -2219,7 +2244,7 @@ static int vnc_start_tls(struct VncState *vs) {
+ 	    }
+ 
+ 	} else {
+-	    gnutls_anon_server_credentials anon_cred = vnc_tls_initialize_anon_cred();
++	    gnutls_anon_server_credentials_t anon_cred = vnc_tls_initialize_anon_cred();
+ 	    if (!anon_cred) {
+ 		gnutls_deinit(vs->tls_session);
+ 		vs->tls_session = NULL;

@@ -79,8 +79,10 @@ struct task_struct *task;
 
 static unsigned long addr = 0;
 static unsigned long value = 0;
+static unsigned int linear = 0;
 module_param(value, ulong, 0);
 module_param(addr, ulong, 0);
+module_param(linear, int, 0);
 uint64_t phys_addr;
 uint64_t va;
 
@@ -126,12 +128,12 @@ static int __init arbitrary_access_init(void) {
     printk("\toffset:\t%x\n",offset);
 
     if ( value ){
-        printk("Will write the %lx values into 0x%lu\n",value, addr);
+        printk("Will write the %lx values into 0x%lx\n",value, addr);
         rc = HYPERVISOR_arbitrary_access(addr, &value, sizeof(value), ARBITRARY_WRITE);
         if ( rc ) 
         {
             printk("Error on writing using arbitrary_access: %d\n", rc);
-            return 1;
+            return rc;
         }
 
     }
@@ -139,7 +141,7 @@ static int __init arbitrary_access_init(void) {
     value = 0;
 
     printk("It will read the value in 0x%lx\n", addr);
-    rc = HYPERVISOR_arbitrary_access(addr, &value, sizeof(value), ARBITRARY_READ);
+    rc = HYPERVISOR_arbitrary_access(addr, &value, sizeof(value), ARBITRARY_READ | ARBITRARY_VERBOSE);
 
     if ( rc ) 
         printk("Error on reading on arbitrary_access: %d\n", rc);

@@ -1,0 +1,12 @@
+*.cmd
+.tmp_versions
+*.symvers
+*~
+*.o
+*.bin
+*.bin.h
+*.order
+*.mod.c
+*.ko
+attack
+

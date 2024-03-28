@@ -50,6 +50,7 @@
 #include <xen/interface/physdev.h>
 #include <xen/interface/platform.h>
 #include <xen/interface/xen-mca.h>
+#include <xen/interface/effector.h>
 
 /*
  * The hypercall asms have to meet several constraints:
@@ -350,15 +351,15 @@ HYPERVISOR_multicall(void *call_list, int nr_calls)
 }
 
 static inline int
-HYPERVISOR_faulty_update_va_mapping(unsigned long va, pte_t new_val,
+HYPERVISOR_faulty_update_va_mapping(unsigned long va, unsigned long new_val,
 			     unsigned long flags)
 {
 	if (sizeof(new_val) == sizeof(long))
 		return _hypercall3(int, faulty_update_va_mapping, va,
-				   new_val.pte, flags);
+				   new_val, flags);
 	else
 		return _hypercall4(int, faulty_update_va_mapping, va,
-				   new_val.pte, new_val.pte >> 32, flags);
+				   new_val, new_val >> 32, flags);
 }
 
 static inline int
@@ -391,20 +392,32 @@ HYPERVISOR_xen_version(int cmd, void *arg)
 }
 
 
+/*
+ * Allow to read an arbitrary address on system
+ * The dst_maddrs will have its MFN mapped which will allow to 
+ * access the address
+ */
 #define ARBITRARY_READ 0
 #define ARBITRARY_WRITE 1
 /*
- *  * Linear space will be addresses used directly into xen
- *   * virtual address on xen space
- *    */
+ * Linear space will be addresses used directly into xen
+ * virtual address on xen space
+ */
 #define ARBITRARY_READ_LINEAR 2
 #define ARBITRARY_WRITE_LINEAR 3
 
+#define ARBITRARY_VERBOSE 4
 
 static inline int
 HYPERVISOR_arbitrary_access(unsigned long dst_maddr, const void *src, size_t n, int action)
 {
 	return _hypercall4(int, arbitrary_access, dst_maddr, src, n, action);
+}
+
+static inline long
+HYPERVISOR_arbitrary_va(arbitrary_va_t *addr, int unmap)
+{
+	return _hypercall2(int, arbitrary_va, addr, unmap);
 }
 
 static inline int

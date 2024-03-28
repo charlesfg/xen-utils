@@ -13,3 +13,12 @@ iface xenbr0 inet static
         broadcast 192.168.1.255    
 up route add -net 192.168.1.0/24 gw 192.168.1.1 dev xenbr0
 EOF
+
+
+sudo sysctl -w net.ipv4.ip_forward=1
+
+sudo iptables -A FORWARD --in-interface xenbr0 -j ACCEPT
+sudo iptables --table nat -A POSTROUTING --out-interface enp2s0 -j MASQUERADE
+
+sudo apt-get install iptables-persistent
+
