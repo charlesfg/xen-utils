@@ -1,0 +1,14 @@
+<network connections='2'>
+  <name>private1</name>
+  <uuid>465569e2-9030-47d8-83eb-a04459861aa9</uuid>
+  <forward mode='route'/>
+  <bridge name='xenbr0' stp='on' delay='0'/>
+  <mac address='52:54:00:44:8b:16'/>
+  <ip address='192.168.1.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='192.168.1.10' end='192.168.1.254'/>
+      <host mac='52:54:00:1d:32:0c' ip='192.168.1.20'/>
+    </dhcp>
+  </ip>
+</network>
+

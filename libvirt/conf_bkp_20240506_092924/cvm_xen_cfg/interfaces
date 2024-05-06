@@ -1,0 +1,23 @@
+# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+# The primary network interface
+auto eth0
+iface eth0 inet static
+ address 172.16.0.10
+ gateway 172.16.0.1
+ netmask 255.255.255.0
+ dns-nameserver 193.136.212.1 193.136.212.21
+
+
+
+ # post-up  ethtool -K eth0 tx off
+
+#
+# The commented out line above will disable TCP checksumming which
+# might resolve problems for some users.  It is disabled by default
+#
