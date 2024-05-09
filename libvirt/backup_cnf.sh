@@ -44,6 +44,7 @@ for h in "${!hosts[@]}"; do
     scp "root@${hosts[$h]}:/etc/network/interfaces" "$backup_dir/${h}_xen_cfg/"
 done
 
+cp /etc/netplan/*.yaml $backup_dir/ -v
 scp "root@${hosts["l1v4-18"]}:/etc/xen/*.cfg" "$backup_dir/l1v4-18_xen_cfg/"
 
 # Define list of commands to execute on each VM
