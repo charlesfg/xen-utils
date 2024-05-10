@@ -1,6 +1,6 @@
-<network connections='2'>
+<network>
   <name>private1</name>
-  forward mode='route'/>
+  <uuid>99d4c87a-081e-4a11-8f26-022ff0ad5b55</uuid>
   <bridge name='xenbr0' stp='on' delay='0'/>
   <mac address='52:54:00:44:8b:16'/>
   <ip address='192.168.1.1' netmask='255.255.255.0'>

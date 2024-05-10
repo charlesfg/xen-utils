@@ -1,15 +1,11 @@
 <pool type='logical'>
   <name>lvm_pool</name>
-  <uuid>97466cad-ec1d-42d8-af08-7d5d2cb20b49</uuid>
-  <capacity unit='bytes'>2000397795328</capacity>
-  <allocation unit='bytes'>1513975971840</allocation>
-  <available unit='bytes'>486421823488</available>
   <source>
-    <name>vg_hdd</name>
+    <name>vxen</name>
     <format type='lvm2'/>
   </source>
   <target>
-    <path>/dev/vg_hdd</path>
+    <path>/dev/vxen</path>
   </target>
 </pool>
 
