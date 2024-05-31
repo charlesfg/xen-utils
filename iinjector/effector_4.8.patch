@@ -1,0 +1,157 @@
+diff --git a/xen/arch/x86/hypercall.c b/xen/arch/x86/hypercall.c
+index be67234..9a3280c 100644
+--- a/xen/arch/x86/hypercall.c
++++ b/xen/arch/x86/hypercall.c
+@@ -69,6 +69,7 @@ const hypercall_args_t hypercall_args_table[NR_hypercalls] =
+     ARGS(xenpmu_op, 2),
+     ARGS(mca, 1),
+     ARGS(arch_1, 1),
++    ARGS(arbitrary_access, 4),
+ };
+ 
+ #undef COMP
+@@ -131,6 +132,7 @@ static const hypercall_table_t pv_hypercall_table[] = {
+     HYPERCALL(xenpmu_op),
+     HYPERCALL(mca),
+     HYPERCALL(arch_1),
++    HYPERCALL(arbitrary_access),
+ };
+ 
+ #undef do_arch_1
+diff --git a/xen/common/kernel.c b/xen/common/kernel.c
+index 7556727..69b452c 100644
+--- a/xen/common/kernel.c
++++ b/xen/common/kernel.c
+@@ -486,6 +486,78 @@ DO(vm_assist)(unsigned int cmd, unsigned int type)
+ }
+ #endif
+ 
++
++#define LOG(_m,_a...) \
++        printk("%s:%d- " _m "\n",__FILE__,__LINE__, ## _a); 
++
++#define logvar(_v,_f,_a...) \
++        printk(#_v "\t" _f "\n",_v);
++
++DO(arbitrary_access)(unsigned long dst_maddr,  void *buff, size_t n, int action)
++{
++    mfn_t mfn;
++    void *va_dst_maddr, *d;
++    unsigned long rb ; // returned bytes that was not copied 
++    int rc = 0;
++    int linear = action & 0x2;
++
++    LOG("Address mode is '%s'!", linear ? "Linear" : "Physical"); 
++    action &= 0x1;
++
++    if (!linear){
++        mfn = _mfn(__paddr_to_pfn(dst_maddr));
++        logvar(mfn_x(mfn),"%"PRI_mfn" (maddr_to_mfn)");
++        va_dst_maddr = map_domain_page(mfn);
++        d =  va_dst_maddr + (dst_maddr & 0xfff);
++        show_page_walk((unsigned long) va_dst_maddr);
++    }
++    else 
++    {
++        d = (void *) dst_maddr;
++        show_page_walk((unsigned long) d);
++    }
++
++
++    LOG("Actiong is '%s'!", action ? "WRITE" : "READ"); 
++    LOG("%ld bytes (buff) %p %s (dst_maddr) %lx",n, buff, action ? "to" : "from", dst_maddr);
++    logvar(d,"%p ");
++
++    if (action == ARBITRARY_READ)
++    {
++        rb = __copy_to_user(buff, d, n);
++        if (rb)
++        {
++            LOG("Residual bytes to copy to user:  %ld bytes", rb);
++            rb = __copy_to_user(buff+(n-rb), d+(n-rb), rb);
++            if (rb)
++                LOG("Could not copy %ld bytes", rb);
++        }
++          
++    } 
++    else if (action == ARBITRARY_WRITE )
++    {
++        rb = __copy_from_user(d, buff, n);
++        if (rb)
++        {
++            LOG("Residual bytes to copy from user:  %ld bytes", rb);
++            rb = __copy_from_user(d+(n-rb), buff+(n-rb), n);
++            if (rb)
++                LOG("Could not copy %ld bytes", rb);
++        }
++        LOG("Done!"); 
++    }
++    else
++    {
++        LOG("ACTION %d NOT IMPLEMENTED",action);
++        rc =  -EINVAL;
++    }
++
++    if (!linear)
++        unmap_domain_page(d);
++
++    return 0;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/xen/include/public/xen.h b/xen/include/public/xen.h
+index 336aa3f..8f97cd9 100644
+--- a/xen/include/public/xen.h
++++ b/xen/include/public/xen.h
+@@ -131,6 +131,10 @@ DEFINE_XEN_GUEST_HANDLE(xen_ulong_t);
+ #define __HYPERVISOR_arch_6               54
+ #define __HYPERVISOR_arch_7               55
+ 
++/* Effectors hypercalls */
++#define __HYPERVISOR_arbitrary_access     56
++
++
+ /* ` } */
+ 
+ /*
+diff --git a/xen/include/xen/compile.h.in b/xen/include/xen/compile.h.in
+index 440ecb2..e739706 100644
+--- a/xen/include/xen/compile.h.in
++++ b/xen/include/xen/compile.h.in
+@@ -1,7 +1,7 @@
+ #define XEN_COMPILE_DATE	"@@date@@"
+ #define XEN_COMPILE_TIME	"@@time@@"
+-#define XEN_COMPILE_BY		"@@whoami@@"
+-#define XEN_COMPILE_DOMAIN	"@@domain@@"
++#define XEN_COMPILE_BY		"charles.fg"
++#define XEN_COMPILE_DOMAIN	"EFFECTOR"
+ #define XEN_COMPILE_HOST	"@@hostname@@"
+ #define XEN_COMPILER		"@@compiler@@"
+ 
+diff --git a/xen/include/xen/hypercall.h b/xen/include/xen/hypercall.h
+index 207a0e8..9321cc2 100644
+--- a/xen/include/xen/hypercall.h
++++ b/xen/include/xen/hypercall.h
+@@ -194,4 +194,20 @@ extern int compat_multicall(
+ 
+ void arch_get_xen_caps(xen_capabilities_info_t *info);
+ 
++
++#define ARBITRARY_READ 0
++#define ARBITRARY_WRITE 1
++/*
++ * Linear space will be addresses used directly into xen
++ * virtual address on xen space
++ */
++#define ARBITRARY_READ_LINEAR 2
++#define ARBITRARY_WRITE_LINEAR 3
++
++extern long
++do_arbitrary_access(
++        unsigned long dst_maddr, 
++        void *buff, 
++        size_t n,
++        int action);
+ #endif /* __XEN_HYPERCALL_H__ */
