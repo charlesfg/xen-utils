@@ -1,6 +1,5 @@
 <network>
   <name>host-bridge</name>
-  <uuid>1ade52fe-0aa5-4be5-8b28-d75b3032f623</uuid>
   <forward mode='bridge'/>
   <bridge name='br0'/>
 </network>

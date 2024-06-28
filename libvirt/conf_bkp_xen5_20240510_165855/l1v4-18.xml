@@ -1,6 +1,5 @@
 <domain type='kvm'>
   <name>l1v4-18</name>
-  <uuid>fcdf44b0-a1d0-4872-bcb3-044c2e6e1948</uuid>
   <metadata>
     <libosinfo:libosinfo xmlns:libosinfo="http://libosinfo.org/xmlns/libvirt/domain/1.0">
       <libosinfo:os id="http://ubuntu.com/ubuntu/20.04"/>
