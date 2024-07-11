@@ -2,7 +2,7 @@
 
 
 HOSTS=(192.168.1.20 192.168.1.30 192.168.1.22 172.16.0.13 172.16.0.14)
-HOST=(l1 sysc cvm sysb mon)
+#HOSTS=(l1 sysc cvm sysb mon)
 
 if [ "$1" == "all" ]; then
     echo  " == Check all hosts in the environment"
