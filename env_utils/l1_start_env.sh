@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 
 # Function to check if Xen is installed
 check_xen() {
@@ -13,6 +13,8 @@ check_kvm() {
 check_vm_ssh_accessibility() {
     local VM_IP="$1"
     local SSH_USER="$2"
+
+    ./wait-for-it.sh "${VM_IP}:22" --timeout=60 --strict -- echo "$VM_IP ready"
 
     ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no ${SSH_USER}@${VM_IP} exit
     return $?
@@ -85,8 +87,6 @@ fi
 if [ "$all_up" = true ]; then
     echo "All VMs are up."
     exit 0
-else
-    sleep 10
 fi
 
 # Call the function with the list of hosts
