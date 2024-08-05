@@ -12,7 +12,6 @@ sudo make install
 sudo /sbin/ldconfig
 
 dist_name="dist_$(git rev-parse --abbrev-ref HEAD)_$(git rev-parse --short HEAD)"
-mv
 
 if [ -e ${dist_name} ];
 then
