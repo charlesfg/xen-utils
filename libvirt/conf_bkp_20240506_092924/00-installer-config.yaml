@@ -1,0 +1,22 @@
+# This is the network config written by 'subiquity'
+network:
+    version: 2
+    renderer: networkd
+
+    ethernets:
+        eno1:
+            dhcp4: false
+            dhcp6: false
+
+    bridges:
+        br0:
+            interfaces: [ eno1 ]
+            addresses: [10.3.2.203/16]
+            routes:
+                - to: default
+                  via: 10.3.0.254
+            nameservers:
+                addresses: [193.136.212.1, 193.136.212.21]
+            parameters:
+                stp: false
+

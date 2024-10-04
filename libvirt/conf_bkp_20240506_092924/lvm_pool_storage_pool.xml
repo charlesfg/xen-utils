@@ -1,0 +1,11 @@
+<pool type='logical'>
+  <name>lvm_pool</name>
+  <source>
+    <name>vxen</name>
+    <format type='lvm2'/>
+  </source>
+  <target>
+    <path>/dev/vxen</path>
+  </target>
+</pool>
+

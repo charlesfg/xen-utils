@@ -1,0 +1,10 @@
+# Arno: Set static IP for VM interface eth0
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    eth0:
+      addresses: [172.16.0.14/16]
+      gateway4: 172.16.0.1
+      nameservers:
+          addresses: [193.136.212.1]
