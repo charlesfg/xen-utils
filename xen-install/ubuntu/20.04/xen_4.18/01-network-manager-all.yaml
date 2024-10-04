@@ -1,0 +1,21 @@
+# Let NetworkManager manage all devices on this system
+network:
+  version: 2
+  renderer: NetworkManager
+
+  ethernets:
+    eno1:
+      dhcp4: false
+      addresses: [10.3.3.3/16]
+      nameservers: 
+        addresses: [193.136.212.1, 193.136.212.21]
+      routes:
+        - to: default
+          via: 10.3.0.254
+
+  bridges:
+    xenbr0:
+      interfaces: [ eno1 ]
+      addresses: [192.168.1.1/24]
+      parameters:
+        stp: false      # Disable Spanning Three Protocol
